@@ -1,0 +1,57 @@
+# LANL Meteorological Data - Git Ignore
+
+# Large data directories
+lanl_met_data/
+
+# Parquet files (large binary data)
+*.parquet
+*.tar.giz
+
+# Model outputs
+model_outputs/
+eda_outputs/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Conda
+*.conda
+
+# Pickle files (can be large)
+*.pkl
+
+# CSV data files (keep only small ones)
+aligned_*.csv
+wide_*.csv
+merged_*.csv
+
+# PyTorch model files
+*.pt
+*.pth
+
+# Logs
+*.log
