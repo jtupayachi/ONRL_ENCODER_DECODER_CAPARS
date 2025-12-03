@@ -47,7 +47,7 @@ def visualize_reconstruction(model, X, y, num_samples=5, save_path=None):
         # Normal samples
         for i, idx in enumerate(normal_indices):
             x = torch.FloatTensor(X[idx:idx+1])
-            reconstruction = model(x).numpy()[0]
+            reconstruction = model(x).cpu().detach().squeeze().tolist()
             
             axes[0, i].bar(range(len(X[idx])), X[idx], alpha=0.7, label='Original')
             axes[0, i].bar(range(len(reconstruction)), reconstruction, alpha=0.7, label='Reconstructed')
@@ -57,7 +57,7 @@ def visualize_reconstruction(model, X, y, num_samples=5, save_path=None):
         # Anomaly samples
         for i, idx in enumerate(anomaly_indices):
             x = torch.FloatTensor(X[idx:idx+1])
-            reconstruction = model(x).numpy()[0]
+            reconstruction = model(x).cpu().detach().squeeze().tolist()
             
             axes[1, i].bar(range(len(X[idx])), X[idx], alpha=0.7, label='Original')
             axes[1, i].bar(range(len(reconstruction)), reconstruction, alpha=0.7, label='Reconstructed')
@@ -76,12 +76,20 @@ def visualize_reconstruction(model, X, y, num_samples=5, save_path=None):
 
 def visualize_error_distribution(errors, labels, save_path=None):
     """Visualize reconstruction error distribution"""
+    # Convert to tensors for easier indexing
+    errors_tensor = torch.tensor(errors) if not isinstance(errors, torch.Tensor) else errors
+    labels_tensor = torch.tensor(labels.tolist()) if hasattr(labels, 'tolist') else torch.tensor(labels)
+    
+    # Get normal and anomaly errors
+    normal_errors = errors_tensor[labels_tensor == 0].tolist()
+    anomaly_errors = errors_tensor[labels_tensor == 1].tolist()
+    
     plt.figure(figsize=(12, 5))
     
     # Subplot 1: Histogram
     plt.subplot(1, 2, 1)
-    plt.hist(errors[labels == 0], bins=50, alpha=0.7, label='Normal', color='blue')
-    plt.hist(errors[labels == 1], bins=50, alpha=0.7, label='Anomaly', color='red')
+    plt.hist(normal_errors, bins=50, alpha=0.7, label='Normal', color='blue')
+    plt.hist(anomaly_errors, bins=50, alpha=0.7, label='Anomaly', color='red')
     plt.xlabel('Reconstruction Error')
     plt.ylabel('Frequency')
     plt.title('Error Distribution')
@@ -90,7 +98,7 @@ def visualize_error_distribution(errors, labels, save_path=None):
     
     # Subplot 2: Box plot
     plt.subplot(1, 2, 2)
-    data = [errors[labels == 0], errors[labels == 1]]
+    data = [normal_errors, anomaly_errors]
     plt.boxplot(data, labels=['Normal', 'Anomaly'])
     plt.ylabel('Reconstruction Error')
     plt.title('Error Box Plot')
@@ -112,17 +120,22 @@ def visualize_latent_space(model, X, y, save_path=None):
     
     with torch.no_grad():
         X_tensor = torch.FloatTensor(X)
-        latent = model.encode(X_tensor).numpy()
+        latent = model.encode(X_tensor).cpu().detach()
     
     if latent.shape[1] == 2:
         plt.figure(figsize=(10, 8))
         
+        # Convert y to tensor for indexing
+        y_tensor = torch.tensor(y.tolist())
+        
         # Plot normal samples
-        plt.scatter(latent[y == 0, 0], latent[y == 0, 1], 
+        normal_latent = latent[y_tensor == 0]
+        plt.scatter(normal_latent[:, 0].tolist(), normal_latent[:, 1].tolist(), 
                    c='blue', alpha=0.6, label='Normal', s=50)
         
         # Plot anomalies
-        plt.scatter(latent[y == 1, 0], latent[y == 1, 1], 
+        anomaly_latent = latent[y_tensor == 1]
+        plt.scatter(anomaly_latent[:, 0].tolist(), anomaly_latent[:, 1].tolist(), 
                    c='red', alpha=0.6, label='Anomaly', s=50, marker='x')
         
         plt.xlabel('Latent Dimension 1')
@@ -177,7 +190,7 @@ def detect_anomalies(model_path, X, y=None):
     X_tensor = torch.FloatTensor(X).to(device)
     predictions, errors = detector.predict(X_tensor)
     
-    return predictions.cpu().numpy(), errors.cpu().numpy()
+    return predictions.cpu().tolist(), errors.cpu().tolist()
 
 
 def main():
@@ -232,7 +245,7 @@ def main():
     visualize_latent_space(model, X, y, save_path='results/latent_space.png')
     
     print("\nInference completed!")
-    print(f"Found {predictions.sum()} anomalies out of {len(predictions)} samples")
+    print(f"Found {sum(predictions)} anomalies out of {len(predictions)} samples")
 
 
 if __name__ == '__main__':

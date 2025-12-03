@@ -210,16 +210,16 @@ def main():
     X_test_tensor = torch.FloatTensor(X_test).to(device)
     
     predictions, errors = detector.predict(X_test_tensor)
-    predictions = predictions.cpu().numpy()
-    errors = errors.cpu().numpy()
+    predictions = predictions.cpu().tolist()
+    errors = errors.cpu().tolist()
     
     # Calculate metrics
     from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
     
     accuracy = accuracy_score(y_test, predictions)
-    precision = precision_score(y_test, predictions)
-    recall = recall_score(y_test, predictions)
-    f1 = f1_score(y_test, predictions)
+    precision = precision_score(y_test, predictions, zero_division=0)
+    recall = recall_score(y_test, predictions, zero_division=0)
+    f1 = f1_score(y_test, predictions, zero_division=0)
     
     print(f"\nTest Set Performance:")
     print(f"Accuracy: {accuracy:.4f}")
