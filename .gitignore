@@ -36,8 +36,8 @@ results/
 logs/
 *.log
 
-# Models (except git tracked)
-models/
+# Saved Models (except git tracked source code)
+/models/
 
 # IDE
 .vscode/
