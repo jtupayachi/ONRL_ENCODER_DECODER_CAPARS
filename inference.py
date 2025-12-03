@@ -10,6 +10,10 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 
 import sys
+import os
+
+# Add project root to path to allow importing src modules
+# This is a simple solution for standalone scripts without requiring package installation
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.models.autoencoder import Autoencoder, AnomalyDetector
@@ -19,6 +23,8 @@ import config
 
 def load_model(model_path, device):
     """Load trained model from checkpoint"""
+    # Note: weights_only=True is not used here because we need to load the config dict
+    # This is safe in this context as we're loading our own saved models
     checkpoint = torch.load(model_path, map_location=device)
     
     model = Autoencoder(
@@ -37,11 +43,27 @@ def visualize_reconstruction(model, X, y, num_samples=5, save_path=None):
     """Visualize original vs reconstructed samples"""
     model.eval()
     
-    # Select samples
-    normal_indices = np.where(y == 0)[0][:num_samples]
-    anomaly_indices = np.where(y == 1)[0][:num_samples]
+    # Select samples - handle insufficient samples gracefully
+    normal_indices = np.where(y == 0)[0]
+    anomaly_indices = np.where(y == 1)[0]
     
-    fig, axes = plt.subplots(2, num_samples, figsize=(15, 6))
+    # Adjust num_samples if insufficient data
+    actual_normal_samples = min(len(normal_indices), num_samples)
+    actual_anomaly_samples = min(len(anomaly_indices), num_samples)
+    actual_samples = min(actual_normal_samples, actual_anomaly_samples)
+    
+    if actual_samples == 0:
+        print("Warning: Not enough samples for visualization")
+        return
+    
+    normal_indices = normal_indices[:actual_samples]
+    anomaly_indices = anomaly_indices[:actual_samples]
+    
+    fig, axes = plt.subplots(2, actual_samples, figsize=(3 * actual_samples, 6))
+    
+    # Handle single column case
+    if actual_samples == 1:
+        axes = axes.reshape(2, 1)
     
     with torch.no_grad():
         # Normal samples

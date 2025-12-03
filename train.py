@@ -13,6 +13,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import sys
+import os
+
+# Add project root to path to allow importing src modules
+# This is a simple solution for standalone scripts without requiring package installation
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.models.autoencoder import Autoencoder, AnomalyDetector

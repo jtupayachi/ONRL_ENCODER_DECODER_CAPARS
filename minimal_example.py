@@ -7,7 +7,8 @@ import torch
 import sys
 import os
 
-# Add parent directory to path
+# Add project root to path to allow importing src modules
+# This is a simple solution for standalone scripts without requiring package installation
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.models.autoencoder import Autoencoder, AnomalyDetector

@@ -7,7 +7,8 @@ import torch
 import sys
 import os
 
-# Add parent directory to path
+# Add project root to path to allow importing src modules  
+# This is a simple solution for standalone examples without requiring package installation
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 

@@ -8,6 +8,8 @@ import numpy as np
 import sys
 import os
 
+# Add project root to path to allow importing src modules
+# This is standard practice for test files that are not installed as a package
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.models.autoencoder import Encoder, Decoder, Autoencoder, AnomalyDetector
