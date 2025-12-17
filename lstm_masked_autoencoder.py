@@ -15,7 +15,7 @@ Training Strategy:
     - Validate on held-out "good" data
     - Test on ALL classes to evaluate anomaly detection
 
-Author: Generated for LANL Meteorological Data Analysis
+Author: LANL Meteorological Data Analysis
 Date: December 2025
 """
 
@@ -29,13 +29,15 @@ from typing import Tuple, Dict, List, Optional
 from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
 # Deep Learning
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import (
     classification_report, confusion_matrix, 
     roc_auc_score, precision_recall_curve, f1_score,
@@ -46,6 +48,10 @@ from tqdm import tqdm
 # Visualization
 import matplotlib.pyplot as plt
 import seaborn as sns
+from IPython.display import clear_output
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for saving
+plt.ion()  # Enable interactive mode for live updates
 
 # ============================================================================
 # CONFIGURATION
@@ -56,7 +62,7 @@ class Config:
     
     # Data paths
     DATA_FILE = Path("/home/jose/ONRL_ENCODER_DECODER_CAPARS/aligned_5min_met_data.parquet")
-    OUTPUT_DIR = Path("/home/jose/ONRL_ENCODER_DECODER_CAPARS/model_outputs")
+    OUTPUT_DIR = Path("/home/jose/ONRL_ENCODER_DECODER_CAPARS/model_outputs_lstm")
     
     # Features
     FEATURES = ['wind direction', 'wind speed']
@@ -90,11 +96,24 @@ class Config:
     TEST_RATIO = 0.15
     RANDOM_SEED = 42
     
+    # K-Fold Cross Validation
+    USE_KFOLD = True           # Set to True to enable K-Fold CV
+    N_FOLDS = 5               # Number of folds for cross-validation
+    
+    # Live plotting
+    LIVE_PLOT = True          # Enable real-time training plots
+    PLOT_INTERVAL = 1         # Update plot every N epochs
+    
     # Anomaly detection
     THRESHOLD_PERCENTILE = 95  # Default threshold at 95th percentile of good data errors
     
     # Device
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # GPU optimizations
+    PIN_MEMORY = torch.cuda.is_available()  # Speed up CPU to GPU transfer
+    NUM_WORKERS = 4 if torch.cuda.is_available() else 0  # Parallel data loading
+    CUDNN_BENCHMARK = True  # Enable cuDNN auto-tuner for faster convolutions
     
     @classmethod
     def to_dict(cls) -> dict:
@@ -141,12 +160,129 @@ def load_data(config: Config) -> pd.DataFrame:
     return df
 
 
+def process_station_sequences(args: Tuple) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Process sequences for a single station using vectorized operations.
+    Used for parallel processing.
+    """
+    station, station_df, features, seq_length, stride, max_nan_ratio, class_map = args
+    
+    # Sort by datetime
+    if 'datetime' in station_df.columns:
+        station_df = station_df.sort_values('datetime')
+    else:
+        station_df = station_df.sort_values('timestamp string')
+    
+    if len(station_df) < seq_length:
+        return np.array([]), np.array([]), np.array([])
+    
+    # Extract features and labels as numpy arrays
+    feature_data = station_df[features].values.astype(np.float32)
+    label_data = station_df['class'].map(class_map).values
+    
+    n_samples = len(feature_data)
+    n_features = len(features)
+    
+    # Calculate number of sequences using vectorized indexing
+    n_sequences = (n_samples - seq_length) // stride + 1
+    
+    if n_sequences <= 0:
+        return np.array([]), np.array([]), np.array([])
+    
+    # Create index array for all sequences at once (vectorized)
+    starts = np.arange(0, n_sequences * stride, stride)
+    
+    # Use stride_tricks for memory-efficient view of sequences
+    # This creates a view without copying data
+    shape = (n_sequences, seq_length, n_features)
+    strides_bytes = (stride * feature_data.strides[0], feature_data.strides[0], feature_data.strides[1])
+    
+    try:
+        sequences_view = np.lib.stride_tricks.as_strided(
+            feature_data, shape=shape, strides=strides_bytes
+        )
+        # Make a copy since we'll modify it
+        sequences = sequences_view.copy()
+    except:
+        # Fallback to regular indexing if stride_tricks fails
+        sequences = np.array([feature_data[i:i+seq_length] for i in starts])
+    
+    # Similarly for labels
+    label_shape = (n_sequences, seq_length)
+    label_strides = (stride * label_data.strides[0], label_data.strides[0])
+    
+    try:
+        labels_view = np.lib.stride_tricks.as_strided(
+            label_data, shape=label_shape, strides=label_strides
+        )
+        seq_labels_all = labels_view.copy()
+    except:
+        seq_labels_all = np.array([label_data[i:i+seq_length] for i in starts])
+    
+    # Vectorized NaN ratio check
+    nan_counts = np.isnan(sequences).sum(axis=(1, 2))
+    total_elements = seq_length * n_features
+    nan_ratios = nan_counts / total_elements
+    valid_mask = nan_ratios <= max_nan_ratio
+    
+    # Filter sequences
+    sequences = sequences[valid_mask]
+    seq_labels_all = seq_labels_all[valid_mask]
+    
+    if len(sequences) == 0:
+        return np.array([]), np.array([]), np.array([])
+    
+    # Vectorized NaN filling using pandas (per sequence)
+    # Fill NaN: forward fill, backward fill, then mean
+    filled_sequences = []
+    final_labels = []
+    
+    for i in range(len(sequences)):
+        seq = sequences[i]
+        seq_df = pd.DataFrame(seq, columns=features)
+        seq_df = seq_df.ffill().bfill()
+        
+        # Fill remaining NaN with column mean
+        for col in seq_df.columns:
+            if seq_df[col].isna().any():
+                col_mean = seq_df[col].mean()
+                if np.isnan(col_mean):
+                    col_mean = 0.0
+                seq_df[col] = seq_df[col].fillna(col_mean)
+        
+        seq_filled = seq_df.values
+        
+        # Skip if still has NaN
+        if np.isnan(seq_filled).any():
+            continue
+        
+        filled_sequences.append(seq_filled)
+        
+        # Determine sequence label (vectorized)
+        seq_label_arr = seq_labels_all[i]
+        if 1 in seq_label_arr:
+            final_labels.append(1)  # bad
+        elif 2 in seq_label_arr:
+            final_labels.append(2)  # suspect
+        else:
+            final_labels.append(0)  # good
+    
+    if len(filled_sequences) == 0:
+        return np.array([]), np.array([]), np.array([])
+    
+    sequences_out = np.array(filled_sequences, dtype=np.float32)
+    labels_out = np.array(final_labels)
+    stations_out = np.array([station] * len(sequences_out))
+    
+    return sequences_out, labels_out, stations_out
+
+
 def create_sequences(
     df: pd.DataFrame,
     config: Config
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Create time series sequences for each station.
+    Create time series sequences for each station using parallel processing.
     
     Returns:
         sequences: (n_sequences, seq_length, n_features)
@@ -154,82 +290,54 @@ def create_sequences(
         metadata: (n_sequences,) - station IDs
     """
     print("\n" + "=" * 70)
-    print("CREATING SEQUENCES")
+    print("CREATING SEQUENCES (Parallel + Vectorized)")
     print("=" * 70)
     
     class_map = {'good': 0, 'bad': 1, 'suspect': 2}
     
+    stations = df['station'].unique()
+    print(f"Processing {len(stations)} stations using {cpu_count()} CPU cores...")
+    
+    # Prepare arguments for parallel processing
+    args_list = [
+        (station, df[df['station'] == station].copy(), 
+         config.FEATURES, config.SEQUENCE_LENGTH, config.STRIDE, 
+         config.MAX_NAN_RATIO, class_map)
+        for station in stations
+    ]
+    
+    # Process in parallel
+    with Pool(processes=cpu_count()) as pool:
+        results = list(tqdm(
+            pool.imap(process_station_sequences, args_list),
+            total=len(stations),
+            desc="Creating sequences"
+        ))
+    
+    # Combine results
     all_sequences = []
     all_labels = []
     all_stations = []
     
-    stations = df['station'].unique()
-    print(f"Processing {len(stations)} stations...")
-    
-    for station in tqdm(stations, desc="Creating sequences"):
-        # Get station data sorted by time
-        station_df = df[df['station'] == station].copy()
-        
-        # Sort by datetime
-        if 'datetime' in station_df.columns:
-            station_df = station_df.sort_values('datetime')
-        else:
-            station_df = station_df.sort_values('timestamp string')
-        
-        if len(station_df) < config.SEQUENCE_LENGTH:
-            continue
-        
-        # Extract features and labels
-        features = station_df[config.FEATURES].values
-        labels = station_df['class'].map(class_map).values
-        
-        # Create sequences with sliding window
-        for i in range(0, len(features) - config.SEQUENCE_LENGTH + 1, config.STRIDE):
-            seq = features[i:i + config.SEQUENCE_LENGTH]
-            seq_labels = labels[i:i + config.SEQUENCE_LENGTH]
-            
-            # Check NaN ratio
-            nan_ratio = np.isnan(seq).sum() / seq.size
-            if nan_ratio > config.MAX_NAN_RATIO:
-                continue
-            
-            # Fill NaN values (forward fill, backward fill, then mean)
-            seq_df = pd.DataFrame(seq, columns=config.FEATURES)
-            seq_df = seq_df.ffill().bfill()
-            
-            # If still NaN, fill with column mean
-            for col in seq_df.columns:
-                if seq_df[col].isna().any():
-                    seq_df[col] = seq_df[col].fillna(seq_df[col].mean())
-            
-            seq = seq_df.values
-            
-            # Skip if still has NaN
-            if np.isnan(seq).any():
-                continue
-            
-            # Determine sequence label (conservative: any bad = bad)
-            if 1 in seq_labels:
-                seq_label = 1  # bad
-            elif 2 in seq_labels:
-                seq_label = 2  # suspect
-            else:
-                seq_label = 0  # good
-            
+    for seq, lab, sta in results:
+        if len(seq) > 0:
             all_sequences.append(seq)
-            all_labels.append(seq_label)
-            all_stations.append(station)
+            all_labels.append(lab)
+            all_stations.append(sta)
     
-    sequences = np.array(all_sequences, dtype=np.float32)
-    labels = np.array(all_labels)
-    stations = np.array(all_stations)
+    if not all_sequences:
+        raise ValueError("No valid sequences created!")
+    
+    sequences = np.concatenate(all_sequences, axis=0)
+    labels = np.concatenate(all_labels, axis=0)
+    stations = np.concatenate(all_stations, axis=0)
     
     print(f"\nSequences created: {len(sequences):,}")
     print(f"Sequence shape: {sequences.shape}")
     print(f"\nLabel distribution:")
     for label, name in [(0, 'Good'), (1, 'Bad'), (2, 'Suspect')]:
         count = (labels == label).sum()
-        pct = count / len(labels) * 100
+        pct = count / len(labels) * 100 if len(labels) > 0 else 0
         print(f"  {name}: {count:,} ({pct:.1f}%)")
     
     return sequences, labels, stations
@@ -483,7 +591,7 @@ def train_epoch(
     total_loss = 0
     
     for batch in dataloader:
-        batch = batch.to(device)
+        batch = batch.to(device, non_blocking=True)
         
         optimizer.zero_grad()
         reconstructed = model(batch)
@@ -511,7 +619,7 @@ def validate_epoch(
     
     with torch.no_grad():
         for batch in dataloader:
-            batch = batch.to(device)
+            batch = batch.to(device, non_blocking=True)
             reconstructed = model(batch)
             loss = criterion(reconstructed, batch)
             total_loss += loss.item()
@@ -519,17 +627,91 @@ def validate_epoch(
     return total_loss / len(dataloader)
 
 
+class LivePlotter:
+    """Real-time training loss plotter"""
+    
+    def __init__(self, output_dir: Path, title: str = "Training Progress"):
+        self.output_dir = output_dir
+        self.title = title
+        self.fig = None
+        self.axes = None
+        
+    def initialize(self):
+        """Initialize the plot"""
+        self.fig, self.axes = plt.subplots(1, 3, figsize=(18, 5))
+        self.fig.suptitle(self.title, fontsize=14, fontweight='bold')
+        
+    def update(self, history: Dict, epoch: int, patience: int, max_patience: int, best_val_loss: float):
+        """Update the plot with current training state"""
+        if self.fig is None:
+            self.initialize()
+        
+        for ax in self.axes:
+            ax.clear()
+        
+        epochs = range(1, len(history['train_loss']) + 1)
+        
+        # Loss curves
+        ax = self.axes[0]
+        ax.plot(epochs, history['train_loss'], 'b-', label='Train Loss', linewidth=2)
+        ax.plot(epochs, history['val_loss'], 'r-', label='Val Loss', linewidth=2)
+        ax.axhline(best_val_loss, color='green', linestyle='--', alpha=0.7, label=f'Best Val: {best_val_loss:.6f}')
+        ax.set_xlabel('Epoch', fontsize=11)
+        ax.set_ylabel('Loss (MSE)', fontsize=11)
+        ax.set_title(f'Loss Curves (Epoch {epoch})', fontsize=12)
+        ax.legend(fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(1, max(len(epochs), 10))
+        
+        # Learning rate
+        ax = self.axes[1]
+        ax.plot(epochs, history['lr'], 'g-', linewidth=2)
+        ax.set_xlabel('Epoch', fontsize=11)
+        ax.set_ylabel('Learning Rate', fontsize=11)
+        ax.set_title('Learning Rate Schedule', fontsize=12)
+        ax.set_yscale('log')
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(1, max(len(epochs), 10))
+        
+        # Early stopping progress bar
+        ax = self.axes[2]
+        colors = ['green' if patience < max_patience * 0.5 else 'orange' if patience < max_patience * 0.8 else 'red']
+        ax.barh(['Patience'], [patience], color=colors, height=0.5)
+        ax.barh(['Patience'], [max_patience], color='lightgray', height=0.5, alpha=0.3)
+        ax.set_xlim(0, max_patience)
+        ax.set_xlabel('Epochs without improvement', fontsize=11)
+        ax.set_title(f'Early Stopping: {patience}/{max_patience}', fontsize=12)
+        ax.text(max_patience/2, 0, f'{patience}/{max_patience}', ha='center', va='center', fontsize=14, fontweight='bold')
+        
+        # Add current stats as text
+        stats_text = f"Epoch: {epoch}\nTrain Loss: {history['train_loss'][-1]:.6f}\nVal Loss: {history['val_loss'][-1]:.6f}\nLR: {history['lr'][-1]:.2e}"
+        self.fig.text(0.98, 0.02, stats_text, fontsize=10, ha='right', va='bottom', 
+                     bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        plt.tight_layout()
+        
+        # Save current state
+        self.fig.savefig(self.output_dir / 'training_live.png', dpi=100, bbox_inches='tight')
+        
+    def close(self):
+        """Close the plot"""
+        if self.fig is not None:
+            plt.close(self.fig)
+
+
 def train_model(
     model: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
-    config: Config
+    config: Config,
+    fold: int = None
 ) -> Dict[str, List[float]]:
     """
-    Full training loop with early stopping and learning rate scheduling
+    Full training loop with early stopping, learning rate scheduling, and live plotting
     """
+    fold_str = f" (Fold {fold})" if fold is not None else ""
     print("\n" + "=" * 70)
-    print("TRAINING MODEL")
+    print(f"TRAINING MODEL{fold_str}")
     print("=" * 70)
     
     device = config.DEVICE
@@ -545,8 +727,7 @@ def train_model(
         optimizer,
         mode='min',
         factor=config.LR_SCHEDULER_FACTOR,
-        patience=config.LR_SCHEDULER_PATIENCE,
-        verbose=True
+        patience=config.LR_SCHEDULER_PATIENCE
     )
     
     history = {'train_loss': [], 'val_loss': [], 'lr': []}
@@ -554,15 +735,27 @@ def train_model(
     patience_counter = 0
     best_model_state = None
     
+    # Initialize live plotter
+    live_plotter = None
+    if config.LIVE_PLOT:
+        title = f"Training Progress{fold_str}"
+        live_plotter = LivePlotter(config.OUTPUT_DIR, title)
+    
     print(f"\nDevice: {device}")
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
     print(f"Training samples: {len(train_loader.dataset):,}")
     print(f"Validation samples: {len(val_loader.dataset):,}")
     print(f"Batch size: {config.BATCH_SIZE}")
     print(f"Learning rate: {config.LEARNING_RATE}")
+    print(f"Early stopping patience: {config.EARLY_STOPPING_PATIENCE}")
+    print(f"LR scheduler patience: {config.LR_SCHEDULER_PATIENCE}")
+    print(f"Live plotting: {'Enabled' if config.LIVE_PLOT else 'Disabled'}")
     print()
     
-    for epoch in range(config.EPOCHS):
+    # Progress bar for epochs
+    pbar = tqdm(range(config.EPOCHS), desc="Training", unit="epoch")
+    
+    for epoch in pbar:
         # Train
         train_loss = train_epoch(model, train_loader, criterion, optimizer, device)
         
@@ -575,34 +768,53 @@ def train_model(
         history['val_loss'].append(val_loss)
         history['lr'].append(current_lr)
         
-        # Learning rate scheduling
+        # Check for LR reduction
+        old_lr = current_lr
         scheduler.step(val_loss)
+        new_lr = optimizer.param_groups[0]['lr']
+        if new_lr < old_lr:
+            print(f"\n📉 LR reduced: {old_lr:.2e} → {new_lr:.2e}")
         
         # Early stopping
         if val_loss < best_val_loss:
+            improvement = best_val_loss - val_loss
             best_val_loss = val_loss
             patience_counter = 0
             best_model_state = model.state_dict().copy()
+            best_epoch = epoch + 1
         else:
             patience_counter += 1
         
-        # Print progress
-        if (epoch + 1) % 5 == 0 or epoch == 0:
-            print(f"Epoch {epoch+1:3d}/{config.EPOCHS} | "
-                  f"Train: {train_loss:.6f} | "
-                  f"Val: {val_loss:.6f} | "
-                  f"LR: {current_lr:.2e} | "
-                  f"Patience: {patience_counter}/{config.EARLY_STOPPING_PATIENCE}")
+        # Update progress bar
+        pbar.set_postfix({
+            'train': f'{train_loss:.5f}',
+            'val': f'{val_loss:.5f}',
+            'best': f'{best_val_loss:.5f}',
+            'lr': f'{new_lr:.1e}',
+            'pat': f'{patience_counter}/{config.EARLY_STOPPING_PATIENCE}'
+        })
+        
+        # Update live plot
+        if live_plotter and (epoch + 1) % config.PLOT_INTERVAL == 0:
+            live_plotter.update(history, epoch + 1, patience_counter, 
+                              config.EARLY_STOPPING_PATIENCE, best_val_loss)
         
         # Early stopping check
         if patience_counter >= config.EARLY_STOPPING_PATIENCE:
-            print(f"\n⚠️  Early stopping triggered at epoch {epoch+1}")
+            print(f"\n\n⚠️  Early stopping triggered at epoch {epoch+1}")
+            print(f"   Best validation loss: {best_val_loss:.6f} at epoch {best_epoch}")
             break
+    
+    # Close live plotter
+    if live_plotter:
+        live_plotter.update(history, epoch + 1, patience_counter,
+                           config.EARLY_STOPPING_PATIENCE, best_val_loss)
+        live_plotter.close()
     
     # Restore best model
     if best_model_state:
         model.load_state_dict(best_model_state)
-        print(f"\n✓ Restored best model (val_loss: {best_val_loss:.6f})")
+        print(f"\n✓ Restored best model from epoch {best_epoch} (val_loss: {best_val_loss:.6f})")
     
     return history
 
@@ -622,11 +834,12 @@ def compute_reconstruction_errors(
     errors = []
     
     dataset = TimeSeriesDataset(sequences)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False,
+                           pin_memory=torch.cuda.is_available())
     
     with torch.no_grad():
         for batch in dataloader:
-            batch = batch.to(device)
+            batch = batch.to(device, non_blocking=True)
             mse = model.compute_reconstruction_error(batch)
             errors.extend(mse.cpu().numpy())
     
@@ -810,6 +1023,85 @@ def plot_training_history(history: Dict, output_dir: Path):
     plt.savefig(output_dir / 'training_history.png', dpi=150, bbox_inches='tight')
     plt.close()
     print(f"Saved: {output_dir / 'training_history.png'}")
+
+
+def plot_kfold_comparison(all_histories: List[Dict], fold_results: List[Dict], output_dir: Path):
+    """Plot comparison of all K-Fold training runs"""
+    n_folds = len(all_histories)
+    
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    
+    # Colors for each fold
+    colors = plt.cm.tab10(np.linspace(0, 1, n_folds))
+    
+    # Plot 1: Training loss for all folds
+    ax = axes[0, 0]
+    for i, history in enumerate(all_histories):
+        ax.plot(history['train_loss'], color=colors[i], label=f'Fold {i+1}', linewidth=1.5, alpha=0.8)
+    ax.set_xlabel('Epoch', fontsize=11)
+    ax.set_ylabel('Training Loss (MSE)', fontsize=11)
+    ax.set_title('Training Loss Across Folds', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=9, loc='upper right')
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 2: Validation loss for all folds
+    ax = axes[0, 1]
+    for i, history in enumerate(all_histories):
+        ax.plot(history['val_loss'], color=colors[i], label=f'Fold {i+1}', linewidth=1.5, alpha=0.8)
+    ax.set_xlabel('Epoch', fontsize=11)
+    ax.set_ylabel('Validation Loss (MSE)', fontsize=11)
+    ax.set_title('Validation Loss Across Folds', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=9, loc='upper right')
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 3: Final validation loss bar chart
+    ax = axes[1, 0]
+    val_losses = [r['final_val_loss'] for r in fold_results]
+    fold_nums = [r['fold'] for r in fold_results]
+    bars = ax.bar(fold_nums, val_losses, color=colors[:n_folds], edgecolor='black', linewidth=1)
+    ax.axhline(np.mean(val_losses), color='red', linestyle='--', linewidth=2, label=f'Mean: {np.mean(val_losses):.6f}')
+    ax.set_xlabel('Fold', fontsize=11)
+    ax.set_ylabel('Final Validation Loss', fontsize=11)
+    ax.set_title('Final Validation Loss by Fold', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    # Add value labels on bars
+    for bar, val in zip(bars, val_losses):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.001, 
+                f'{val:.5f}', ha='center', va='bottom', fontsize=9)
+    
+    # Plot 4: Summary statistics
+    ax = axes[1, 1]
+    ax.axis('off')
+    
+    # Create summary text
+    summary_text = f"""
+    K-Fold Cross-Validation Summary
+    {'='*40}
+    
+    Number of Folds: {n_folds}
+    
+    Validation Loss Statistics:
+      • Mean:    {np.mean(val_losses):.6f}
+      • Std:     {np.std(val_losses):.6f}
+      • Min:     {np.min(val_losses):.6f} (Fold {np.argmin(val_losses)+1})
+      • Max:     {np.max(val_losses):.6f} (Fold {np.argmax(val_losses)+1})
+    
+    Epochs Trained:
+      • Mean:    {np.mean([r['epochs_trained'] for r in fold_results]):.1f}
+      • Range:   {min([r['epochs_trained'] for r in fold_results])} - {max([r['epochs_trained'] for r in fold_results])}
+    """
+    
+    ax.text(0.1, 0.9, summary_text, transform=ax.transAxes, fontsize=12,
+            verticalalignment='top', fontfamily='monospace',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    plt.suptitle('K-Fold Cross-Validation Results', fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+    plt.savefig(output_dir / 'kfold_comparison.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"Saved: {output_dir / 'kfold_comparison.png'}")
 
 
 def plot_error_distributions(
@@ -1036,16 +1328,16 @@ def save_model_and_artifacts(
         json.dump(history, f, indent=2)
     print(f"  History saved: {history_path}")
     
-    # Save results
+    # Save results - convert numpy types to Python types for JSON serialization
     results = {
-        'threshold': threshold,
-        'accuracy': eval_results['accuracy'],
-        'precision': eval_results['precision'],
-        'recall': eval_results['recall'],
-        'specificity': eval_results['specificity'],
-        'f1': eval_results['f1'],
-        'roc_auc': eval_results['roc_auc'],
-        'pr_auc': eval_results['pr_auc'],
+        'threshold': float(threshold),
+        'accuracy': float(eval_results['accuracy']),
+        'precision': float(eval_results['precision']),
+        'recall': float(eval_results['recall']),
+        'specificity': float(eval_results['specificity']),
+        'f1': float(eval_results['f1']),
+        'roc_auc': float(eval_results['roc_auc']) if eval_results['roc_auc'] is not None else None,
+        'pr_auc': float(eval_results['pr_auc']) if eval_results['pr_auc'] is not None else None,
         'confusion_matrix': eval_results['confusion_matrix'].tolist()
     }
     results_path = output_dir / 'evaluation_results.json'
@@ -1079,6 +1371,24 @@ def main():
     torch.manual_seed(config.RANDOM_SEED)
     np.random.seed(config.RANDOM_SEED)
     
+    # GPU Setup
+    print("\n" + "=" * 70)
+    print("DEVICE CONFIGURATION")
+    print("=" * 70)
+    print(f"PyTorch version: {torch.__version__}")
+    print(f"CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"CUDA version: {torch.version.cuda}")
+        print(f"GPU Device: {torch.cuda.get_device_name(0)}")
+        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+        torch.backends.cudnn.benchmark = config.CUDNN_BENCHMARK
+        print(f"cuDNN benchmark: {config.CUDNN_BENCHMARK}")
+        if config.RANDOM_SEED:
+            torch.cuda.manual_seed(config.RANDOM_SEED)
+    else:
+        print("⚠️  No GPU detected - using CPU (training will be slower)")
+    print(f"Using device: {config.DEVICE}")
+    
     # 1. Load data
     df = load_data(config)
     
@@ -1092,40 +1402,160 @@ def main():
     val_seq, val_labels = data_splits['val']
     test_seq, test_labels = data_splits['test']
     
-    # 4. Normalize data
-    train_norm, val_norm, test_norm, scaler = normalize_data(train_seq, val_seq, test_seq)
-    
-    # 5. Create data loaders
-    train_dataset = TimeSeriesDataset(train_norm, train_labels)
-    val_dataset = TimeSeriesDataset(val_norm, val_labels)
-    
-    train_loader = DataLoader(
-        train_dataset, 
-        batch_size=config.BATCH_SIZE, 
-        shuffle=True,
-        num_workers=0
-    )
-    val_loader = DataLoader(
-        val_dataset, 
-        batch_size=config.BATCH_SIZE, 
-        shuffle=False,
-        num_workers=0
-    )
-    
-    # 6. Create model
-    model = LSTMAutoencoder(config)
-    print(f"\nModel Architecture:")
-    print(model)
-    
-    # 7. Train model
-    history = train_model(model, train_loader, val_loader, config)
+    # Check if using K-Fold Cross Validation
+    if config.USE_KFOLD:
+        print("\n" + "=" * 70)
+        print(f"K-FOLD CROSS VALIDATION ({config.N_FOLDS} folds)")
+        print("=" * 70)
+        
+        # Combine train and val for K-Fold
+        combined_seq = np.concatenate([train_seq, val_seq], axis=0)
+        combined_labels = np.concatenate([train_labels, val_labels], axis=0)
+        
+        kfold = KFold(n_splits=config.N_FOLDS, shuffle=True, random_state=config.RANDOM_SEED)
+        
+        fold_results = []
+        all_histories = []
+        best_fold_model = None
+        best_fold_val_loss = float('inf')
+        best_fold_idx = 0
+        
+        for fold_idx, (train_idx, val_idx) in enumerate(kfold.split(combined_seq)):
+            print(f"\n{'='*70}")
+            print(f"FOLD {fold_idx + 1}/{config.N_FOLDS}")
+            print(f"{'='*70}")
+            
+            # Split data for this fold
+            fold_train_seq = combined_seq[train_idx]
+            fold_val_seq = combined_seq[val_idx]
+            
+            # Normalize data for this fold
+            fold_train_norm, fold_val_norm, fold_test_norm, fold_scaler = normalize_data(
+                fold_train_seq, fold_val_seq, test_seq
+            )
+            
+            # Create data loaders
+            fold_train_dataset = TimeSeriesDataset(fold_train_norm)
+            fold_val_dataset = TimeSeriesDataset(fold_val_norm)
+            
+            fold_train_loader = DataLoader(
+                fold_train_dataset,
+                batch_size=config.BATCH_SIZE,
+                shuffle=True,
+                num_workers=config.NUM_WORKERS,
+                pin_memory=config.PIN_MEMORY
+            )
+            fold_val_loader = DataLoader(
+                fold_val_dataset,
+                batch_size=config.BATCH_SIZE,
+                shuffle=False,
+                num_workers=config.NUM_WORKERS,
+                pin_memory=config.PIN_MEMORY
+            )
+            
+            # Create and train model for this fold
+            fold_model = LSTMAutoencoder(config)
+            fold_history = train_model(fold_model, fold_train_loader, fold_val_loader, config, fold=fold_idx+1)
+            all_histories.append(fold_history)
+            
+            # Compute validation loss for this fold
+            final_val_loss = min(fold_history['val_loss'])
+            fold_results.append({
+                'fold': fold_idx + 1,
+                'final_val_loss': final_val_loss,
+                'epochs_trained': len(fold_history['train_loss']),
+                'min_train_loss': min(fold_history['train_loss'])
+            })
+            
+            # Track best fold
+            if final_val_loss < best_fold_val_loss:
+                best_fold_val_loss = final_val_loss
+                best_fold_model = fold_model
+                best_fold_idx = fold_idx + 1
+                best_scaler = fold_scaler
+                best_test_norm = fold_test_norm
+        
+        # Print K-Fold summary
+        print("\n" + "=" * 70)
+        print("K-FOLD CROSS VALIDATION SUMMARY")
+        print("=" * 70)
+        
+        val_losses = [r['final_val_loss'] for r in fold_results]
+        print(f"\nFold Results:")
+        for r in fold_results:
+            marker = " *** BEST ***" if r['fold'] == best_fold_idx else ""
+            print(f"  Fold {r['fold']}: Val Loss = {r['final_val_loss']:.6f}, "
+                  f"Epochs = {r['epochs_trained']}{marker}")
+        
+        print(f"\nCross-Validation Statistics:")
+        print(f"  Mean Val Loss: {np.mean(val_losses):.6f}")
+        print(f"  Std Val Loss:  {np.std(val_losses):.6f}")
+        print(f"  Best Fold:     {best_fold_idx} (Val Loss: {best_fold_val_loss:.6f})")
+        
+        # Use best fold model for evaluation
+        model = best_fold_model
+        scaler = best_scaler
+        test_norm = best_test_norm
+        history = all_histories[best_fold_idx - 1]
+        
+        # Plot all folds comparison
+        plot_kfold_comparison(all_histories, fold_results, config.OUTPUT_DIR)
+        
+    else:
+        # Standard train/val/test split
+        print("\n" + "=" * 70)
+        print("STANDARD TRAIN/VAL/TEST SPLIT")
+        print("=" * 70)
+        
+        # 4. Normalize data
+        train_norm, val_norm, test_norm, scaler = normalize_data(train_seq, val_seq, test_seq)
+        
+        # 5. Create data loaders
+        train_dataset = TimeSeriesDataset(train_norm, train_labels)
+        val_dataset = TimeSeriesDataset(val_norm, val_labels)
+        
+        train_loader = DataLoader(
+            train_dataset, 
+            batch_size=config.BATCH_SIZE, 
+            shuffle=True,
+            num_workers=config.NUM_WORKERS,
+            pin_memory=config.PIN_MEMORY
+        )
+        val_loader = DataLoader(
+            val_dataset, 
+            batch_size=config.BATCH_SIZE, 
+            shuffle=False,
+            num_workers=config.NUM_WORKERS,
+            pin_memory=config.PIN_MEMORY
+        )
+        
+        # 6. Create model
+        model = LSTMAutoencoder(config)
+        print(f"\nModel Architecture:")
+        print(model)
+        
+        # 7. Train model
+        history = train_model(model, train_loader, val_loader, config)
+        
+        val_norm_for_errors = val_norm
     
     # 8. Compute reconstruction errors
     print("\n" + "=" * 70)
     print("COMPUTING RECONSTRUCTION ERRORS")
     print("=" * 70)
     
-    val_errors = compute_reconstruction_errors(model, val_norm, config.DEVICE)
+    if config.USE_KFOLD:
+        # For K-Fold, use the validation set from the best fold
+        # Re-normalize all good data with best scaler for error computation
+        good_mask = labels == 0
+        good_seq = sequences[good_mask]
+        n_good, seq_len, n_features = good_seq.shape
+        good_flat = good_seq.reshape(-1, n_features)
+        good_norm = scaler.transform(good_flat).reshape(n_good, seq_len, n_features)
+        val_errors = compute_reconstruction_errors(model, good_norm, config.DEVICE)
+    else:
+        val_errors = compute_reconstruction_errors(model, val_norm, config.DEVICE)
+    
     test_errors = compute_reconstruction_errors(model, test_norm, config.DEVICE)
     
     print(f"Validation errors: mean={val_errors.mean():.6f}, std={val_errors.std():.6f}")
@@ -1167,6 +1597,9 @@ def main():
     print(f"  F1 Score:    {eval_results['f1']:.4f}")
     if eval_results['roc_auc']:
         print(f"  ROC-AUC:     {eval_results['roc_auc']:.4f}")
+    if config.USE_KFOLD:
+        print(f"\n  K-Fold CV:   {config.N_FOLDS} folds")
+        print(f"  Best Fold:   {best_fold_idx}")
     print(f"\nOutputs saved to: {config.OUTPUT_DIR}")
     print("=" * 70)
 

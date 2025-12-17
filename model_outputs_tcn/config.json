@@ -1,0 +1,42 @@
+{
+  "DATA_FILE": "/home/jose/ONRL_ENCODER_DECODER_CAPARS/aligned_5min_met_data.parquet",
+  "OUTPUT_DIR": "/home/jose/ONRL_ENCODER_DECODER_CAPARS/model_outputs_tcn",
+  "FEATURES": [
+    "wind direction",
+    "wind speed"
+  ],
+  "TARGET_COLUMN": "class",
+  "SEQUENCE_LENGTH": 48,
+  "STRIDE": 24,
+  "INPUT_DIM": 2,
+  "TCN_CHANNELS": [
+    32,
+    64,
+    128,
+    64,
+    32
+  ],
+  "KERNEL_SIZE": 3,
+  "LATENT_DIM": 64,
+  "DROPOUT": 0.2,
+  "USE_ATTENTION": true,
+  "BATCH_SIZE": 128,
+  "EPOCHS": 150,
+  "LEARNING_RATE": 0.001,
+  "WEIGHT_DECAY": 0.0001,
+  "EARLY_STOPPING_PATIENCE": 20,
+  "LR_SCHEDULER_PATIENCE": 7,
+  "LR_SCHEDULER_FACTOR": 0.5,
+  "TRAIN_RATIO": 0.7,
+  "VAL_RATIO": 0.15,
+  "TEST_RATIO": 0.15,
+  "RANDOM_SEED": 42,
+  "USE_KFOLD": true,
+  "N_FOLDS": 5,
+  "LIVE_PLOT": true,
+  "PLOT_INTERVAL": 1,
+  "THRESHOLD_PERCENTILE": 95,
+  "DEVICE": "cuda",
+  "PIN_MEMORY": true,
+  "NUM_WORKERS": 4
+}
