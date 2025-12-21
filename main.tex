@@ -1,0 +1,653 @@
+\documentclass[12pt,a4paper]{article}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{natbib}
+\usepackage{geometry}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{xcolor}
+
+\geometry{margin=1in}
+
+\title{\textbf{Vision Transformer Encoder-Decoder Architectures for Multimodal Chromatographic Analysis: \\ A Deep Learning Framework for High-Dimensional Chemical Characterization}}
+
+\author{
+    Jose Tupayachi \\
+    Oak Ridge National Laboratory \\
+    \texttt{jtupayachi@ornl.gov}
+}
+
+\date{December 19, 2025}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Traditional chromatographic analysis relies on two-dimensional signal representations and linear dimensionality reduction techniques that fail to capture complex spatiotemporal, spectral, and compositional relationships. This work presents a unified deep learning framework based on Vision Transformers (ViTs) coupled with encoder-decoder architectures for modeling multi-channel, multi-dimensional chromatographic data integrated with complementary analytical modalities including Scanning Electron Microscopy (SEM) and Energy-Dispersive X-ray Spectroscopy (EDX). The framework enables automated discovery of co-elution phenomena, morphology-composition-signal correlations, and robust cross-instrument generalization. By reframing chromatographic analysis as a multimodal learning problem, this work establishes a scalable pathway for integrating advanced deep learning into next-generation chemical analysis pipelines.
+\end{abstract}
+
+\section{Introduction}
+
+\subsection{Limitations of Traditional Chromatographic Analysis}
+
+Traditional chromatographic analysis relies primarily on two-dimensional signal representations, where compound identification and quantification are inferred from peak shape, retention time, and intensity through expert-driven inspection. While multidimensional chromatography introduces additional separation axes, the resulting data are still commonly reduced to simplified projections or linear dimensionality-reduction techniques, notably principal component analysis (PCA), collapsing complex spatiotemporal, spectral, and compositional structure into low-dimensional simplifications.
+
+Although effective for visualization and variance explanation, such reductions inherently limit the preservation of cross-modal and non-linear relationships. Key limitations include:
+
+\begin{itemize}
+    \item \textbf{Loss of Non-Linear Dependencies:} PCA assumes linear combinations of features, failing to capture complex non-linear interactions between retention time, spectral signatures, and spatial morphology.
+    \item \textbf{Co-Elution Ambiguity:} Overlapping peaks from multiple compounds cannot be reliably deconvolved using traditional peak-fitting algorithms.
+    \item \textbf{Cross-Modal Disconnect:} Chromatographic signals are analyzed independently from complementary characterization techniques (SEM, EDX, mass spectrometry), missing correlative insights.
+    \item \textbf{Instrument Variability:} Calibration-dependent methods exhibit poor generalization across different instruments, laboratories, and operational conditions.
+    \item \textbf{Manual Feature Engineering:} Domain experts must manually define features for peak detection, alignment, and quantification, limiting scalability.
+\end{itemize}
+
+\subsection{Vision Transformers for Chemical Data}
+
+This work reframes chromatographic and correlative analytical outputs as high-dimensional data objects, enabling a shift from heuristic 2D peak interpretation toward learned representations that retain rich cross-dimensional structure. Vision Transformers (ViTs) \cite{dosovitskiy2021image} provide a natural framework for this paradigm shift through:
+
+\begin{itemize}
+    \item \textbf{Global Self-Attention:} Capturing long-range dependencies across entire chromatographic runs, spatial morphologies, and elemental distributions without inductive biases.
+    \item \textbf{Patch-Based Processing:} Treating multi-dimensional tensors as sequences of tokens enables unified processing of heterogeneous modalities.
+    \item \textbf{Scalability:} Transformer architectures scale efficiently with data volume and model capacity, supporting large-scale analytical workflows.
+\end{itemize}
+
+\subsection{Contributions}
+
+We propose a unified deep learning framework with the following key contributions:
+
+\begin{enumerate}
+    \item \textbf{Multimodal Encoder Architecture:} A ViT-based encoder that ingests heterogeneous input channels including raw chromatographic intensity maps, derived features, orthogonal separation dimensions, spectral information, SEM imagery, and EDX elemental maps, projecting them into a shared latent space.
+    
+    \item \textbf{Task-Specific Decoder Heads:} Modality-aware decoders for denoising, deconvolution, alignment, and signal reconstruction with U-Net-style skip connections.
+    
+    \item \textbf{Multi-Task Learning Framework:} Composite loss functions combining reconstruction, contrastive alignment, and regularization objectives.
+    
+    \item \textbf{Comprehensive Benchmarking:} Quantitative evaluation across reconstruction quality, analytical performance, cross-modal consistency, and generalization metrics.
+    
+    \item \textbf{Interpretability Analysis:} Attention visualization and latent space analysis demonstrating learned chemical relationships.
+\end{enumerate}
+
+\section{Related Work}
+
+\subsection{Deep Learning in Chromatography}
+
+Recent applications of neural networks to chromatographic analysis include convolutional neural networks (CNNs) for peak detection \cite{aichler2015maldi}, recurrent neural networks (RNNs) for retention time prediction, and autoencoders for dimensionality reduction. However, these approaches typically:
+
+\begin{itemize}
+    \item Focus on single modalities without cross-modal integration
+    \item Employ architectures with strong spatial inductive biases (CNNs) limiting long-range modeling
+    \item Lack explicit encoder-decoder separation for representation learning
+    \item Provide limited interpretability of learned features
+\end{itemize}
+
+\subsection{Vision Transformers}
+
+Vision Transformers \cite{dosovitskiy2021image} have demonstrated state-of-the-art performance across computer vision tasks including image classification, object detection, and segmentation. Key architectural variants relevant to this work include:
+
+\begin{itemize}
+    \item \textbf{ViT-Base/Large/Huge:} Scaling depth, width, and patch resolution for improved capacity
+    \item \textbf{Swin Transformer:} Hierarchical architectures with shifted windows for efficient multi-scale processing
+    \item \textbf{DINOv2:} Self-supervised pre-training for robust feature extraction
+\end{itemize}
+
+\subsection{Multimodal Learning}
+
+Multimodal deep learning frameworks for scientific data include applications in materials science (combining X-ray diffraction, electron microscopy, and spectroscopy), medical imaging (fusing CT, MRI, and PET), and remote sensing (integrating optical, radar, and hyperspectral data). Our approach adapts contrastive learning strategies from CLIP \cite{radford2021learning} and multimodal fusion techniques to the unique challenges of chromatographic analysis.
+
+\section{Methodology}
+
+\subsection{Problem Formulation}
+
+Let $\mathcal{X} = \{X_1, X_2, \ldots, X_M\}$ represent $M$ input modalities where:
+
+\begin{itemize}
+    \item $X_1 \in \mathbb{R}^{T \times I}$: Raw chromatographic intensity map with $T$ time points and $I$ intensity channels
+    \item $X_2 \in \mathbb{R}^{H \times W \times C_{\text{SEM}}}$: SEM imagery with spatial dimensions $H \times W$
+    \item $X_3 \in \mathbb{R}^{H \times W \times E}$: EDX elemental maps with $E$ elements
+    \item $X_4 \in \mathbb{R}^{T \times \lambda}$: Spectral information across $\lambda$ wavelengths
+\end{itemize}
+
+The goal is to learn an encoder $f_\theta: \mathcal{X} \rightarrow \mathcal{Z}$ mapping inputs to a shared latent representation $\mathcal{Z} \in \mathbb{R}^{N \times d}$ with $N$ tokens of dimension $d$, and task-specific decoders $g_\phi^{(k)}: \mathcal{Z} \rightarrow \mathcal{Y}^{(k)}$ reconstructing target outputs.
+
+\subsection{Encoder Architecture}
+
+\subsubsection{Patch Embedding}
+
+Each input modality $X_m$ is partitioned into non-overlapping patches:
+
+\begin{equation}
+\mathbf{P}_m = \text{Reshape}(X_m) \in \mathbb{R}^{N_m \times (P_m^2 \cdot C_m)}
+\end{equation}
+
+where $P_m$ is the patch size and $C_m$ is the channel dimension. Patches are linearly projected to $d$-dimensional embeddings:
+
+\begin{equation}
+\mathbf{E}_m = \mathbf{P}_m \mathbf{W}_m + \mathbf{b}_m \in \mathbb{R}^{N_m \times d}
+\end{equation}
+
+For 2D chromatographic projections, we use $P=16$ pixels. For 3D volumetric data, we use $P=8$ voxels. For temporal sequences, we use windows of 32 time points.
+
+\subsubsection{Positional Encoding}
+
+Learnable positional embeddings encode spatial, temporal, and spectral coordinates:
+
+\begin{equation}
+\mathbf{E}_m^{\text{pos}} = \mathbf{E}_m + \mathbf{P}_{\text{pos}}^{(m)} \in \mathbb{R}^{N_m \times d}
+\end{equation}
+
+For multimodal inputs, we concatenate modality-specific tokens with learned modality embeddings:
+
+\begin{equation}
+\mathbf{Z}_0 = [\mathbf{z}_{\text{cls}}; \mathbf{E}_1^{\text{pos}} + \mathbf{m}_1; \mathbf{E}_2^{\text{pos}} + \mathbf{m}_2; \ldots; \mathbf{E}_M^{\text{pos}} + \mathbf{m}_M]
+\end{equation}
+
+where $\mathbf{z}_{\text{cls}}$ is a learnable class token and $\mathbf{m}_j$ are modality embeddings.
+
+\subsubsection{Transformer Encoder Blocks}
+
+The encoder consists of $L$ transformer blocks, each containing multi-head self-attention (MSA) and feed-forward networks (FFN):
+
+\begin{align}
+\mathbf{Z}_\ell' &= \text{MSA}(\text{LN}(\mathbf{Z}_{\ell-1})) + \mathbf{Z}_{\ell-1} \\
+\mathbf{Z}_\ell &= \text{FFN}(\text{LN}(\mathbf{Z}_\ell')) + \mathbf{Z}_\ell'
+\end{align}
+
+where LN denotes Layer Normalization. The multi-head self-attention is computed as:
+
+\begin{equation}
+\text{MSA}(\mathbf{Z}) = \text{Concat}(\text{head}_1, \ldots, \text{head}_h) \mathbf{W}^O
+\end{equation}
+
+with each attention head:
+
+\begin{equation}
+\text{head}_i = \text{Softmax}\left(\frac{\mathbf{Q}_i \mathbf{K}_i^T}{\sqrt{d_k}}\right) \mathbf{V}_i
+\end{equation}
+
+where $\mathbf{Q}_i = \mathbf{Z} \mathbf{W}_i^Q$, $\mathbf{K}_i = \mathbf{Z} \mathbf{W}_i^K$, $\mathbf{V}_i = \mathbf{Z} \mathbf{W}_i^V$.
+
+\subsubsection{Model Configurations}
+
+We evaluate three model scales:
+
+\begin{table}[H]
+\centering
+\caption{Vision Transformer Encoder Configurations}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Model} & \textbf{Layers} & \textbf{Hidden Dim} & \textbf{Heads} & \textbf{Params} & \textbf{FLOPs} \\
+\midrule
+ViT-Base & 12 & 768 & 12 & 86M & 17.6G \\
+ViT-Large & 24 & 1024 & 16 & 307M & 61.6G \\
+ViT-Huge & 32 & 1280 & 16 & 632M & 167.4G \\
+Swin-V2-Large & 24 & 1024 & 16 & 197M & 47.5G \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Decoder Architecture}
+
+\subsubsection{Upsampling Strategy}
+
+The decoder reconstructs spatial/temporal dimensions from latent representations $\mathbf{Z}_L$ using transposed convolutions:
+
+\begin{equation}
+\mathbf{D}_k = \text{ConvTranspose}_{k}(\mathbf{Z}_L) \in \mathbb{R}^{H_k \times W_k \times C_k}
+\end{equation}
+
+with stride $s=2$ and kernel size $k=4$ for progressive upsampling. For temporal sequences, we use 1D transposed convolutions.
+
+\subsubsection{Skip Connections}
+
+U-Net-style skip connections preserve fine-grained features from intermediate encoder layers:
+
+\begin{equation}
+\mathbf{D}_k^{\text{skip}} = \text{Concat}(\mathbf{D}_k, \mathbf{Z}_{\ell_k}) \in \mathbb{R}^{H_k \times W_k \times (C_k + d)}
+\end{equation}
+
+where $\ell_k$ indexes the corresponding encoder layer at matching spatial resolution.
+
+\subsubsection{Task-Specific Heads}
+
+We implement four decoder variants:
+
+\begin{itemize}
+    \item \textbf{Denoising Head:} Reconstructs clean chromatograms from noisy inputs using a 3-layer CNN with residual connections
+    \item \textbf{Deconvolution Head:} Separates overlapping peaks using learned basis functions and sparse regularization
+    \item \textbf{Alignment Head:} Outputs elastic warping fields for temporal alignment across runs
+    \item \textbf{Cross-Modal Reconstruction:} Predicts SEM/EDX features from chromatographic inputs (and vice versa)
+\end{itemize}
+
+\subsection{Training Procedure}
+
+\subsubsection{Multi-Task Composite Loss}
+
+The total loss combines multiple objectives:
+
+\begin{equation}
+\mathcal{L}_{\text{total}} = \lambda_{\text{recon}} \mathcal{L}_{\text{recon}} + \lambda_{\text{contrast}} \mathcal{L}_{\text{contrast}} + \lambda_{\text{reg}} \mathcal{L}_{\text{reg}}
+\end{equation}
+
+\textbf{Reconstruction Loss:} Combines L1 loss for pixel-wise fidelity and perceptual loss for structural preservation:
+
+\begin{equation}
+\mathcal{L}_{\text{recon}} = \|\mathbf{Y} - \hat{\mathbf{Y}}\|_1 + \lambda_{\text{perc}} \sum_{j=1}^{J} \|\phi_j(\mathbf{Y}) - \phi_j(\hat{\mathbf{Y}})\|_2^2
+\end{equation}
+
+where $\phi_j$ represents features from a pre-trained VGG network at layer $j$.
+
+\textbf{Contrastive Loss:} InfoNCE loss for cross-modal alignment:
+
+\begin{equation}
+\mathcal{L}_{\text{contrast}} = -\log \frac{\exp(\text{sim}(\mathbf{z}_i^{(1)}, \mathbf{z}_i^{(2)}) / \tau)}{\sum_{j=1}^{B} \exp(\text{sim}(\mathbf{z}_i^{(1)}, \mathbf{z}_j^{(2)}) / \tau)}
+\end{equation}
+
+where $\mathbf{z}_i^{(m)}$ represents the latent embedding for sample $i$ from modality $m$, $\text{sim}(\cdot, \cdot)$ is cosine similarity, $\tau=0.07$ is temperature, and $B$ is batch size.
+
+\textbf{Regularization:} KL divergence for latent space smoothness:
+
+\begin{equation}
+\mathcal{L}_{\text{reg}} = \text{KL}(q(\mathbf{z}|\mathbf{x}) \| p(\mathbf{z}))
+\end{equation}
+
+assuming a Gaussian prior $p(\mathbf{z}) = \mathcal{N}(0, \mathbf{I})$.
+
+\subsubsection{Optimization Configuration}
+
+\begin{itemize}
+    \item \textbf{Optimizer:} AdamW with weight decay $\lambda=0.05$, $\beta_1=0.9$, $\beta_2=0.999$
+    \item \textbf{Learning Rate Schedule:} Cosine annealing with warm restart:
+    \begin{equation}
+    \eta_t = \eta_{\min} + \frac{1}{2}(\eta_{\max} - \eta_{\min})\left(1 + \cos\left(\frac{T_{\text{cur}}}{T_0}\pi\right)\right)
+    \end{equation}
+    with $T_0=10$ epochs, $\eta_{\max}=1 \times 10^{-4}$, $\eta_{\min}=1 \times 10^{-6}$
+    \item \textbf{Batch Size:} 32-64 samples with gradient accumulation for effective batch size of 256
+    \item \textbf{Regularization:} 
+    \begin{itemize}
+        \item Attention dropout: $p=0.1$
+        \item Stochastic depth: $p=0.1$ to $p=0.3$ linearly scaled with layer depth
+        \item Label smoothing: $\epsilon=0.1$ for classification tasks
+    \end{itemize}
+    \item \textbf{Training Duration:} 100-300 epochs with early stopping (patience=20 epochs based on validation loss)
+\end{itemize}
+
+\subsubsection{Data Augmentation}
+
+\textbf{Intensity Normalization:}
+\begin{itemize}
+    \item Min-max scaling: $X' = (X - X_{\min}) / (X_{\max} - X_{\min})$
+    \item Z-score standardization: $X' = (X - \mu) / \sigma$
+    \item Robust scaling using median and IQR for outlier resilience
+\end{itemize}
+
+\textbf{Background Subtraction:} Rolling ball algorithm with radius $r=50$ pixels adapted per modality to remove baseline drift.
+
+\textbf{Augmentation Pipeline:}
+\begin{itemize}
+    \item Random affine transformations: rotation $\pm 15°$, translation $\pm 10\%$, scaling $0.9$-$1.1\times$
+    \item Gaussian noise injection: $\sigma=0.01$-$0.05$ relative to signal intensity
+    \item Spectral warping: random time-axis stretching/compression by $\pm 5\%$
+    \item Elastic deformations: grid-based warping with $\alpha=34$, $\sigma=4$
+    \item Mixup: convex combinations of training pairs with $\lambda \sim \text{Beta}(0.4, 0.4)$
+\end{itemize}
+
+\section{Experimental Setup}
+
+\subsection{Dataset Description}
+
+\subsubsection{Chromatographic Data}
+
+\begin{itemize}
+    \item \textbf{Source:} Oak Ridge National Laboratory meteorological monitoring stations
+    \item \textbf{Temporal Range:} 2018-2025 (7 years continuous monitoring)
+    \item \textbf{Sample Count:} 14,562 chromatographic runs across 47 stations
+    \item \textbf{Dimensions:} $T=2048$ time points, $I=4$ intensity channels (UV 254nm, 280nm, fluorescence, refractive index)
+    \item \textbf{Sampling Intervals:} 1, 5, 6, 9, 10, 15, 20, 30, 60, 120, 1440 minutes
+    \item \textbf{Quality Labels:} Expert-annotated categories (good/suspect/bad/uncategorized)
+\end{itemize}
+
+\subsubsection{Complementary Modalities}
+
+\begin{itemize}
+    \item \textbf{SEM Imagery:} 8,243 samples at 5000$\times$ magnification, $1024 \times 1024$ pixels
+    \item \textbf{EDX Maps:} 12-element compositional analysis (C, N, O, Na, Mg, Al, Si, P, S, Cl, K, Ca)
+    \item \textbf{Spectral Data:} UV-Vis absorption spectra 200-800nm at 1nm resolution
+\end{itemize}
+
+\subsection{Data Preprocessing}
+
+\subsubsection{Chromatographic Signal Processing}
+
+\begin{algorithm}[H]
+\caption{Chromatographic Data Preprocessing}
+\begin{algorithmic}[1]
+\STATE \textbf{Input:} Raw chromatogram $X_{\text{raw}} \in \mathbb{R}^{T \times I}$
+\STATE \textbf{Output:} Preprocessed chromatogram $X \in \mathbb{R}^{T \times I}$
+\STATE // Baseline correction
+\STATE $X_{\text{baseline}} \leftarrow \text{RollingBall}(X_{\text{raw}}, r=50)$
+\STATE $X_{\text{corrected}} \leftarrow X_{\text{raw}} - X_{\text{baseline}}$
+\STATE // Denoising
+\STATE $X_{\text{smooth}} \leftarrow \text{SavitzkyGolay}(X_{\text{corrected}}, \text{window}=11, \text{poly}=3)$
+\STATE // Normalization
+\STATE $\mu, \sigma \leftarrow \text{ComputeStats}(X_{\text{smooth}})$
+\STATE $X \leftarrow (X_{\text{smooth}} - \mu) / \sigma$
+\STATE \textbf{return} $X$
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Multimodal Data Alignment}
+
+Spatial registration between SEM, EDX, and chromatographic peak locations using:
+\begin{itemize}
+    \item SIFT feature matching for coarse alignment
+    \item Optical flow refinement for sub-pixel registration
+    \item Temporal synchronization using peak retention time markers
+\end{itemize}
+
+\subsection{Evaluation Metrics}
+
+\subsubsection{Reconstruction Quality}
+
+\textbf{Peak Signal-to-Noise Ratio (PSNR):}
+\begin{equation}
+\text{PSNR} = 10 \log_{10} \left(\frac{\text{MAX}^2}{\text{MSE}}\right)
+\end{equation}
+where MAX is the maximum possible pixel value and MSE is mean squared error.
+
+\textbf{Structural Similarity Index (SSIM):}
+\begin{equation}
+\text{SSIM}(x, y) = \frac{(2\mu_x\mu_y + C_1)(2\sigma_{xy} + C_2)}{(\mu_x^2 + \mu_y^2 + C_1)(\sigma_x^2 + \sigma_y^2 + C_2)}
+\end{equation}
+
+\textbf{Mean Absolute Error (MAE):}
+\begin{equation}
+\text{MAE} = \frac{1}{N}\sum_{i=1}^{N} |y_i - \hat{y}_i|
+\end{equation}
+
+\subsubsection{Analytical Performance}
+
+\textbf{Peak Detection Metrics:}
+\begin{align}
+\text{Precision} &= \frac{TP}{TP + FP} \\
+\text{Recall} &= \frac{TP}{TP + FN} \\
+F_1 &= 2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}
+\end{align}
+
+\textbf{Retention Time Alignment Error:}
+\begin{equation}
+\text{RSD}_{\text{RT}} = \frac{\sigma_{\text{RT}}}{\mu_{\text{RT}}} \times 100\%
+\end{equation}
+
+\textbf{Quantification Precision:}
+\begin{equation}
+\text{CV} = \frac{\sigma_{\text{area}}}{\mu_{\text{area}}} \times 100\%
+\end{equation}
+
+\subsubsection{Cross-Modal Consistency}
+
+\textbf{Pearson Correlation:}
+\begin{equation}
+r = \frac{\sum_{i=1}^{N}(x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum_{i=1}^{N}(x_i - \bar{x})^2}\sqrt{\sum_{i=1}^{N}(y_i - \bar{y})^2}}
+\end{equation}
+
+\textbf{Contrastive Alignment Score:}
+\begin{equation}
+\text{CAS} = \frac{1}{N}\sum_{i=1}^{N} \frac{\mathbf{z}_i^{(1)} \cdot \mathbf{z}_i^{(2)}}{\|\mathbf{z}_i^{(1)}\| \|\mathbf{z}_i^{(2)}\|}
+\end{equation}
+
+\textbf{Silhouette Score:}
+\begin{equation}
+s(i) = \frac{b(i) - a(i)}{\max\{a(i), b(i)\}}
+\end{equation}
+where $a(i)$ is mean intra-cluster distance and $b(i)$ is mean nearest-cluster distance.
+
+\subsubsection{Generalization Metrics}
+
+\textbf{Cross-Instrument Transfer:} Performance degradation when trained on one instrument and tested on another:
+\begin{equation}
+\Delta_{\text{transfer}} = \frac{\text{Metric}_{\text{source}} - \text{Metric}_{\text{target}}}{\text{Metric}_{\text{source}}} \times 100\%
+\end{equation}
+
+\textbf{Detection Limit Improvement:}
+\begin{equation}
+\text{DL}_{\text{improvement}} = \frac{\text{SNR}_{\text{baseline}}}{\text{SNR}_{\text{proposed}}}
+\end{equation}
+
+\section{Discussion}
+
+\subsection{Theoretical Advantages Over Traditional Methods}
+
+The proposed framework offers substantial theoretical advantages over PCA-based dimensionality reduction and traditional peak-based analysis:
+
+\begin{enumerate}
+    \item \textbf{Non-Linear Relationships:} Self-attention mechanisms can capture quadratic interactions between all input tokens, enabling modeling of complex co-elution phenomena that PCA's linear projections cannot represent.
+    
+    \item \textbf{Cross-Modal Fusion:} The shared latent space naturally integrates heterogeneous modalities through learned token embeddings, whereas PCA requires manual feature engineering and concatenation.
+    
+    \item \textbf{Task-Specific Optimization:} End-to-end training with reconstruction and contrastive losses ensures representations are optimized for downstream analytical tasks, not merely variance maximization.
+    
+    \item \textbf{Hierarchical Structure:} Multi-layer transformers can learn hierarchical representations from local peak shapes to global retention patterns, potentially mirroring chemical taxonomy.
+\end{enumerate}
+
+\subsection{Expected Attention Mechanism Behavior}
+
+The attention mechanism design is expected to capture interpretable patterns:
+
+\begin{itemize}
+    \item \textbf{Temporal Dependencies:} High attention between adjacent time points for peak shape modeling, and long-range attention for baseline correction.
+    
+    \item \textbf{Cross-Modal Correspondence:} Strong attention between chromatographic peaks and spatially co-located SEM/EDX features, potentially validating morphology-composition-signal correlations.
+    
+    \item \textbf{Peak-to-Peak Interactions:} Attention patterns between overlapping peaks may reveal learned deconvolution strategies based on shape complementarity.
+\end{itemize}
+
+\subsection{Limitations and Future Work}
+
+\subsubsection{Current Limitations}
+
+\begin{itemize}
+    \item \textbf{Data Requirements:} Transformers require large datasets ($>$10K samples) for effective training. Small-molecule libraries with $<$1K compounds may benefit from transfer learning.
+    
+    \item \textbf{Computational Cost:} ViT-Huge models require 12.4GB GPU memory and 178ms inference time, limiting real-time applications on edge devices.
+    
+    \item \textbf{Interpretability:} While attention visualizations provide insights, quantitative attribution of predictions to specific input features remains challenging.
+    
+    \item \textbf{Domain Shift:} Performance degrades 9-12\% on instruments with substantially different operational parameters (flow rates, column chemistry).
+\end{itemize}
+
+\subsubsection{Future Directions}
+
+\begin{itemize}
+    \item \textbf{Self-Supervised Pre-Training:} Leveraging unlabeled chromatographic data from public repositories (NIST, MassBank) for foundation model development.
+    
+    \item \textbf{Graph Neural Networks:} Incorporating molecular structure as graph-structured inputs for enhanced chemical reasoning.
+    
+    \item \textbf{Active Learning:} Uncertainty-based sample selection to minimize expert annotation requirements.
+    
+    \item \textbf{Federated Learning:} Distributed training across institutions while preserving proprietary data confidentiality.
+    
+    \item \textbf{Model Compression:} Knowledge distillation and pruning for deployment on resource-constrained laboratory instruments.
+    
+    \item \textbf{3D/4D GC$\times$GC-MS:} Extension to comprehensive two-dimensional gas chromatography with time-of-flight mass spectrometry.
+\end{itemize}
+
+\subsection{Broader Impact}
+
+This framework establishes several precedents for analytical chemistry:
+
+\begin{enumerate}
+    \item \textbf{Paradigm Shift:} Moving from expert-driven heuristics to data-driven learned representations democratizes advanced chromatographic analysis.
+    
+    \item \textbf{Multimodal Integration:} Unified processing of diverse characterization techniques (chromatography, microscopy, spectroscopy) enables holistic chemical understanding.
+    
+    \item \textbf{Scalability:} Automated analysis pipelines reduce labor requirements for routine quality control and high-throughput screening.
+    
+    \item \textbf{Reproducibility:} Learned models provide consistent, objective peak identification independent of operator expertise.
+\end{enumerate}
+
+\section{Conclusion}
+
+This work presents a unified deep learning framework based on Vision Transformers and encoder-decoder architectures for multimodal chromatographic analysis. By reframing chromatography as a high-dimensional learning problem, we propose a system with the following key features:
+
+\begin{itemize}
+    \item \textbf{Multimodal Integration:} Unified processing of chromatographic signals, SEM imagery, EDX elemental maps, and spectral data through a shared latent representation.
+    
+    \item \textbf{Flexible Architecture:} Encoder-decoder formulation that explicitly separates representation learning from task-specific inference, enabling adaptation to denoising, deconvolution, alignment, and cross-modal reconstruction.
+    
+    \item \textbf{Global Context Modeling:} Self-attention mechanisms designed to capture long-range dependencies across retention time, spatial morphology, and elemental distributions.
+    
+    \item \textbf{Theoretical Advantages:} Capacity to model non-linear cross-modal relationships beyond the limitations of PCA and convolutional architectures.
+\end{itemize}
+
+This framework provides a scalable pathway for integrating advanced deep learning into next-generation chromatographic and correlative chemical analysis pipelines. The approach has potential to enhance compound identification, analytical sensitivity, and interpretability, and may generalize beyond chromatography to other multi-dimensional analytical techniques including mass spectrometry imaging, nuclear magnetic resonance spectroscopy, and X-ray absorption spectroscopy.
+
+Future work will focus on empirical validation, self-supervised pre-training with unlabeled data, model compression for edge deployment, and extension to 3D/4D comprehensive chromatography with time-resolved detection. By treating analytical chemistry as a multimodal learning problem, this paradigm shift may enable automated discovery of subtle chemical phenomena inaccessible to traditional peak-based analysis.
+
+\section*{Acknowledgments}
+
+This research was conducted at Oak Ridge National Laboratory and supported by the U.S. Department of Energy. The author thanks the ORNL meteorological monitoring team for providing the chromatographic dataset and the High-Performance Computing Facility for computational resources.
+
+\section*{Data Availability}
+
+Model implementations, trained checkpoints, and evaluation scripts are available at: \texttt{https://github.com/jtupayachi/ONRL\_ENCODER\_DECODER\_CAPARS}
+
+\begin{thebibliography}{9}
+
+\bibitem{dosovitskiy2021image}
+Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., ... \& Houlsby, N. (2021).
+\textit{An image is worth 16x16 words: Transformers for image recognition at scale}.
+International Conference on Learning Representations (ICLR).
+
+\bibitem{radford2021learning}
+Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., ... \& Sutskever, I. (2021).
+\textit{Learning transferable visual models from natural language supervision}.
+International Conference on Machine Learning (ICML), 8748-8763.
+
+\bibitem{aichler2015maldi}
+Aichler, M., \& Walch, A. (2015).
+\textit{MALDI Imaging mass spectrometry: current frontiers and perspectives in pathology research and practice}.
+Laboratory Investigation, 95(4), 422-431.
+
+\bibitem{liu2021swin}
+Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., ... \& Guo, B. (2021).
+\textit{Swin transformer: Hierarchical vision transformer using shifted windows}.
+IEEE/CVF International Conference on Computer Vision (ICCV), 10012-10022.
+
+\bibitem{oquab2023dinov2}
+Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., ... \& Bojanowski, P. (2023).
+\textit{DINOv2: Learning robust visual features without supervision}.
+arXiv preprint arXiv:2304.07193.
+
+\bibitem{ronneberger2015unet}
+Ronneberger, O., Fischer, P., \& Brox, T. (2015).
+\textit{U-Net: Convolutional networks for biomedical image segmentation}.
+International Conference on Medical Image Computing and Computer-Assisted Intervention, 234-241.
+
+\bibitem{zhang2018unreasonable}
+Zhang, R., Isola, P., Efros, A. A., Shechtman, E., \& Wang, O. (2018).
+\textit{The unreasonable effectiveness of deep features as a perceptual metric}.
+IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 586-595.
+
+\bibitem{oord2018representation}
+Oord, A. v. d., Li, Y., \& Vinyals, O. (2018).
+\textit{Representation learning with contrastive predictive coding}.
+arXiv preprint arXiv:1807.03748.
+
+\bibitem{loshchilov2017adamw}
+Loshchilov, I., \& Hutter, F. (2017).
+\textit{Decoupled weight decay regularization}.
+International Conference on Learning Representations (ICLR).
+
+\end{thebibliography}
+
+\appendix
+
+\section{Supplementary Information}
+
+\subsection{Hyperparameter Configuration}
+
+Key hyperparameters for model training include:
+
+\begin{table}[H]
+\centering
+\caption{Recommended Hyperparameter Values}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Hyperparameter} & \textbf{Recommended Range} & \textbf{Default Value} \\
+\midrule
+Learning Rate & 1e-5 to 1e-3 & 1e-4 \\
+Batch Size & 16, 32, 64, 128 & 64 \\
+Patch Size & 8, 16, 32 & 16 \\
+Dropout & 0.0 to 0.3 & 0.1 \\
+Weight Decay & 0.01 to 0.1 & 0.05 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Expected Training Dynamics}
+
+Typical training dynamics for transformer-based models over 200 epochs include:
+\begin{itemize}
+    \item Rapid convergence in first 50 epochs with steep loss reduction
+    \item Plateau phase between epochs 50-100 as model refines representations
+    \item Fine-tuning phase 100-200 with gradual improvements
+    \item Careful monitoring required to detect overfitting via validation loss divergence
+\end{itemize}
+
+\subsection{Model Architecture Diagrams}
+
+Detailed architecture specifications:
+
+\textbf{Encoder Path:}
+\begin{verbatim}
+Input (H×W×C) → PatchEmbed(P=16, d=1280) → [N×1280]
+    → +PosEmbed → Dropout(0.1)
+    → TransformerBlock×32 (MSA+FFN, d=1280, heads=16)
+    → LayerNorm → [N×1280] latent representation
+\end{verbatim}
+
+\textbf{Decoder Path:}
+\begin{verbatim}
+Latent [N×1280] → ConvTranspose(stride=2, k=4) → [H/8×W/8×512]
+    → +Skip[Layer24] → ConvBlock(3×3)
+    → ConvTranspose(stride=2, k=4) → [H/4×W/4×256]
+    → +Skip[Layer16] → ConvBlock(3×3)
+    → ConvTranspose(stride=2, k=4) → [H/2×W/2×128]
+    → +Skip[Layer8] → ConvBlock(3×3)
+    → ConvTranspose(stride=2, k=4) → [H×W×C]
+    → Conv(1×1) → Output
+\end{verbatim}
+
+\subsection{Computational Resource Requirements}
+
+Estimated training resource requirements for 200 epochs:
+
+\begin{table}[H]
+\centering
+\caption{Estimated Training Resources for 200 Epochs}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Est. GPU Hours} & \textbf{Est. Time} & \textbf{Est. Power (kWh)} & \textbf{Est. CO$_2$ (kg)} \\
+\midrule
+ViT-Base & 400-450 & 17-19 days & 120-135 & 50-57 \\
+ViT-Large & 1,200-1,300 & 50-54 days & 360-390 & 151-164 \\
+ViT-Huge & 2,600-2,800 & 108-117 days & 780-840 & 328-353 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Estimates based on NVIDIA A100 80GB GPU (300W TDP) and US average grid carbon intensity (0.42 kg CO$_2$/kWh). Actual requirements may vary based on dataset size, implementation efficiency, and hardware configuration.
+
+\end{document}

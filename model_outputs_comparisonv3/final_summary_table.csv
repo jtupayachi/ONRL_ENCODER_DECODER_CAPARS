@@ -1,0 +1,4 @@
+Model,Mean Accuracy,Std Accuracy,Mean F1-Score,Std F1-Score,Best Fold Acc,Worst Fold Acc,Parameters,Model ID
+ViT-Huge,0.7012,0.0572,0.6920,0.0576,0.7670,0.6635,"630,768,643",google/vit-huge-patch14-224-in21k
+Swin-V2-Large,0.6848,0.0354,0.6766,0.0485,0.7212,0.6505,"195,207,543",microsoft/swinv2-large-patch4-window12-192-22k
+Ensemble (ViT+Swin),0.7010,0.0179,0.6959,0.0062,0.7184,0.6827,N/A,ensemble

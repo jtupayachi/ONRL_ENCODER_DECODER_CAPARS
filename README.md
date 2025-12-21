@@ -321,3 +321,219 @@ pyarrow
 5. **K-Fold CV**: Reliable model selection and variance estimation
 
 ---
+
+
+
+
+# NOW VISION TRANSFORMERS!
+
+
+# Question what to do with the nan values categories? EXCLUDE!IF NOT MANY TO THE BAD CATEGORY  A MONTH OF BATH DATA EXCLUDE IT ---> GOOD VS BAD .... 
+
+# is it fine if we train all for a model? or different models? WE SHOULD ... ALL DATA INTERVAL/ BREAKIT UP DIFFERENT INTERVALS ...
+# ...  IF WE JSUT LOOK AT THE INDIVIDUAL .... 5 ,10 ,15 .... (ISSUE WITH THE NUMBER OF DOTS  .... CARE MORE ABOUT RANDOMNESS DIRECTION OF THE GRAPH AND VALUES OF THE SPEED.). SPEED AND WIND SEPARATE TOO ... 
+---------- GET BEST MODEL ----------
+
+# 5 ten minutes ... 10 minutes ...
+
+--------------------------------------------------
+ENSEMBLE .... METHOD .... LAST OUTPUT
+
+# Script
+```
+nohup python3 multi_model_training.py > training_log.log 2>&1 &
+```
+
+
+## Now we have:
+```
+# During Training (per fold):
+Real-time progress bars
+Train/Val loss and accuracy
+Confusion matrix saved after each fold
+Classification report JSON
+Predictions CSV
+
+# After Each Model:
+Final confusion matrix (aggregated across all folds)
+K-fold summary with statistics
+All predictions combined
+
+# Final Comparison:
+Bar chart comparing all 3 models
+Summary table with mean ± std for each model
+Best model identification
+
+```
+
+
+## Image Preprocessing:
+
+
+
+Input:
+├── /lanl_met_data/images/speed/*.png
+└── /lanl_met_data/images/dir/*.png
+    (Wind speed and direction time-series plots)
+
+Process (OpenCV):
+1. Read image as BGR
+2. Convert to grayscale
+3. Apply threshold (250) to detect white borders *******NEED TO TUNE THIS BETTER!*******
+4. Find largest contour (plot content)
+5. Get bounding box: x, y, w, h
+6. Crop image to content only
+7. Save trimmed image
+
+Output:
+└── /trimmed_images/
+    ├── StationName_speed.png  (172 images)
+    └── StationName_dir.png    (171 images)
+    Total: 343 images (~565×426 avg size)
+
+
+
+
+
+
+
+
+
+Input: Trimmed image (variable size, RGB)
+
+Process Chain:
+
+┌─────────────────────────────────────┐
+│ 1. Load Image                       │
+│    PIL.Image.open(path)             │
+│    → RGB (H × W × 3)                │
+└─────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────┐
+│ 2. Convert to Grayscale ✅          │
+│    image.convert('L')               │
+│    → Single channel (H × W × 1)     │
+│                                     │
+│ Why? Focuses on temporal patterns   │
+│      not color artifacts            │
+└─────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────┐
+│ 3. Expand Back to 3 Channels        │
+│    Image.merge('RGB', [L, L, L])    │
+│    → (H × W × 3) grayscale RGB      │
+│                                     │
+│ Why? Models expect 3-channel input  │
+└─────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────┐
+│ 4. NO Augmentation                  │
+│    (Previously had flip/rotation)   │
+│    NOW: Preserve temporal structure │
+│                                     │
+└─────────────────────────────────────┘
+              ↓
+┌─────────────────────────────────────┐
+│ 5. Model-Specific Processing        │
+│    processor(images=img)            │
+│                                     │
+│    a) Resize to model input:        │
+│       - ViT/ConvNeXt/Swin: 384×384  │
+│       - DINOv2: 518×518             │
+│                                     │
+│    b) Normalize (ImageNet stats):   │
+│       mean = [0.485, 0.456, 0.406]  │
+│       std = [0.229, 0.224, 0.225]   │
+│                                     │
+│    c) Convert to PyTorch tensor:    │
+│       (3, H, W) float32             │
+└─────────────────────────────────────┘
+              ↓
+Output: Preprocessed tensor ready for model
+
+
+
+
+
+
+
+
+Input: 
+├── List of (image_path, label, station_name) tuples
+├── Image processor
+└── Preprocessing flags
+
+Process:
+1. Load image from path
+2. Apply RGB conversion
+3. Process with model processor
+4. Map label to ID: {good:0, bad:1, suspect:2}
+5. Return batch dict:
+   {
+     'pixel_values': tensor(3, 384, 384),
+     'labels': tensor(int),
+     'station_name': str,
+     'image_path': str
+   }
+
+Output: PyTorch Dataset ready for DataLoader
+
+
+
+
+
+# To run:
+
+
+
+for v3 (Ensemble swin transformer for the suspect class)
+
+```
+ nohup python3 multi_model_trainingv3.py > training_logv3.txt 2>&1 &
+```
+
+
+for v1
+```
+sleep 1800 && nohup python3 multi_model_training.py > training_log.txt 2>&1 &
+```
+
+for v2
+
+```
+sleep 3600 && nohup python3 multi_model_trainingv2.py > training_logv2.txt 2>&1 &
+```
+
+
+for v4
+
+```
+sleep 3600 && nohup python3 multi_model_trainingv4.py > training_logv4.txt 2>&1 &
+```
+
+
+
+
+Input: 343 images with labels
+
+Process:
+┌───────────────────────────────────────┐
+│ Fold 1:                               │
+│   Train: ~229 images (2/3)            │
+│   Val:   ~114 images (1/3)            │
+│   Stratified by class (good/bad/susp) │
+└───────────────────────────────────────┘
+┌───────────────────────────────────────┐
+│ Fold 2:                               │
+│   Train: ~229 images (different 2/3)  │
+│   Val:   ~114 images (different 1/3)  │
+└───────────────────────────────────────┘
+┌───────────────────────────────────────┐
+│ Fold 3:                               │
+│   Train: ~229 images (remaining 2/3)  │
+│   Val:   ~114 images (remaining 1/3)  │
+└───────────────────────────────────────┘
+
+Output: 3 independent train/val splits
+
+

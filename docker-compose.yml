@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  onrl_encoder_decoder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: onrl_encoder_decoder:latest
+    container_name: onrl_encoder_decoder
+    volumes:
+      - /home/jose/ONRL_ENCODER_DECODER_CAPARS:/workspace
+    working_dir: /workspace
+    command: tail -f /dev/null
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    tty: true
+    stdin_open: true

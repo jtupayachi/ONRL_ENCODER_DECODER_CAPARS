@@ -1,0 +1,142 @@
+[
+  {
+    "model_name": "ViT-Large",
+    "model_id": "google/vit-large-patch16-384",
+    "mean_accuracy": 0.6432038834951457,
+    "std_accuracy": 0.057493779276186846,
+    "mean_f1": 0.6306000820582937,
+    "std_f1": 0.045592788306315905,
+    "best_fold_accuracy": 0.6796116504854369,
+    "worst_fold_accuracy": 0.5769230769230769,
+    "parameters": "303,693,827",
+    "color": "purple",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 8,
+        "val_accuracy": 0.6730769230769231,
+        "val_f1_score": 0.6619845484117872,
+        "val_loss": 0.7628110486727494
+      },
+      {
+        "fold": 2,
+        "best_epoch": 3,
+        "val_accuracy": 0.5769230769230769,
+        "val_f1_score": 0.5783023329129887,
+        "val_loss": 0.8565255678617038
+      },
+      {
+        "fold": 3,
+        "best_epoch": 5,
+        "val_accuracy": 0.6796116504854369,
+        "val_f1_score": 0.6515133648501047,
+        "val_loss": 0.8009457634045527
+      }
+    ]
+  },
+  {
+    "model_name": "ConvNeXt-Large",
+    "model_id": "facebook/convnext-large-384",
+    "mean_accuracy": 0.6237552900174259,
+    "std_accuracy": 0.04452101809045492,
+    "mean_f1": 0.6161144068107723,
+    "std_f1": 0.039271648694807766,
+    "best_fold_accuracy": 0.6730769230769231,
+    "worst_fold_accuracy": 0.5865384615384616,
+    "parameters": "196,234,947",
+    "color": "blue",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 15,
+        "val_accuracy": 0.6730769230769231,
+        "val_f1_score": 0.660009508047229,
+        "val_loss": 0.9002282619476318
+      },
+      {
+        "fold": 2,
+        "best_epoch": 15,
+        "val_accuracy": 0.5865384615384616,
+        "val_f1_score": 0.5843089935038415,
+        "val_loss": 0.9036221825159513
+      },
+      {
+        "fold": 3,
+        "best_epoch": 15,
+        "val_accuracy": 0.6116504854368932,
+        "val_f1_score": 0.6040247188812468,
+        "val_loss": 0.9191448046610906
+      }
+    ]
+  },
+  {
+    "model_name": "Swin-V2-Large",
+    "model_id": "microsoft/swinv2-large-patch4-window12-192-22k",
+    "mean_accuracy": 0.6431727657455814,
+    "std_accuracy": 0.023642958133997128,
+    "mean_f1": 0.6264671512407469,
+    "std_f1": 0.024811203563785827,
+    "best_fold_accuracy": 0.6699029126213593,
+    "worst_fold_accuracy": 0.625,
+    "parameters": "195,207,543",
+    "color": "green",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 5,
+        "val_accuracy": 0.625,
+        "val_f1_score": 0.6080187974418744,
+        "val_loss": 0.7983822685021621
+      },
+      {
+        "fold": 2,
+        "best_epoch": 8,
+        "val_accuracy": 0.6346153846153846,
+        "val_f1_score": 0.6167087175750543,
+        "val_loss": 0.8589566327058352
+      },
+      {
+        "fold": 3,
+        "best_epoch": 4,
+        "val_accuracy": 0.6699029126213593,
+        "val_f1_score": 0.6546739387053119,
+        "val_loss": 0.7723711958298316
+      }
+    ]
+  },
+  {
+    "model_name": "DINOv2-Large",
+    "model_id": "facebook/dinov2-large",
+    "mean_accuracy": 0.6366380383370674,
+    "std_accuracy": 0.02451768653263961,
+    "mean_f1": 0.6244903680912716,
+    "std_f1": 0.028807047966388347,
+    "best_fold_accuracy": 0.6634615384615384,
+    "worst_fold_accuracy": 0.6153846153846154,
+    "parameters": "304,374,787",
+    "color": "red",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 8,
+        "val_accuracy": 0.6634615384615384,
+        "val_f1_score": 0.6569082894864487,
+        "val_loss": 0.7619142761597266
+      },
+      {
+        "fold": 2,
+        "best_epoch": 7,
+        "val_accuracy": 0.6153846153846154,
+        "val_f1_score": 0.6018273550349023,
+        "val_loss": 0.8349626247699444
+      },
+      {
+        "fold": 3,
+        "best_epoch": 8,
+        "val_accuracy": 0.6310679611650486,
+        "val_f1_score": 0.6147354597524636,
+        "val_loss": 0.860159878547375
+      }
+    ]
+  }
+]

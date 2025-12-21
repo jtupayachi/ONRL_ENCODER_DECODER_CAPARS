@@ -15,15 +15,16 @@ import os
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 import glob
 from multiprocessing import Pool, cpu_count
 from functools import partial
 
 # Configuration
 BASE_DIR = Path("/home/jose/ONRL_ENCODER_DECODER_CAPARS/lanl_met_data/data_by_storage_interval")
-STORAGE_INTERVALS = [5, 10, 15 ]  # minutes ,60 #HERE WE CAN TRY DIFFERENT CONVINATIONS AND INTERVALS
-QUALITY_CLASSES = ["good", "bad"] # HERE EITHER GOOD WITH BAD OR ALL THREE , "suspect"
+CATEGORY_EXCEL = Path("/home/jose/ONRL_ENCODER_DECODER_CAPARS/LANL_categories.xlsx")
+STORAGE_INTERVALS = [5, 10, 15]  # minutes ,60 #HERE WE CAN TRY DIFFERENT CONVINATIONS AND INTERVALS
+QUALITY_CLASSES = ["good", "bad", "suspect"]  # All classes from Excel file
 OUTPUT_FILE = Path("/home/jose/ONRL_ENCODER_DECODER_CAPARS/merged_met_data.parquet")
 
 # Alignment configuration
@@ -36,6 +37,23 @@ INTERPOLATE_UPSAMPLING = True  # If True, interpolate when upsampling; if False,
 NUM_WORKERS = cpu_count()  # Use all available CPU cores
 
 
+def load_category_mapping() -> Dict[str, str]:
+    """Load station category mapping from Excel file"""
+    try:
+        df = pd.read_excel(CATEGORY_EXCEL)
+        # Create mapping: station name -> category (lowercase)
+        category_map = {}
+        for _, row in df.iterrows():
+            station = str(row['Station']).strip()
+            category = str(row['Category']).strip().lower()
+            category_map[station] = category
+        print(f"Loaded {len(category_map)} station categories from {CATEGORY_EXCEL}")
+        return category_map
+    except Exception as e:
+        print(f"Error loading category Excel file: {e}")
+        return {}
+
+
 def extract_station_id(filename: str) -> str:
     """Extract station ID from filename like 'MesoWest_ASOS-AWOS_KABQ_2023.csv'"""
     # Remove extension and split by underscore
@@ -44,6 +62,17 @@ def extract_station_id(filename: str) -> str:
     # Station ID is typically the third part
     if len(parts) >= 3:
         return parts[-2]  # Second to last (before year)
+    return name
+
+
+def get_full_station_name(filename: str) -> str:
+    """Extract full station name (without year) from filename"""
+    # Remove extension and year
+    name = filename.replace('.csv', '')
+    parts = name.split('_')
+    # Remove the last part (year)
+    if len(parts) >= 2:
+        return '_'.join(parts[:-1])
     return name
 
 
@@ -164,15 +193,24 @@ def create_wide_format(df: pd.DataFrame) -> pd.DataFrame:
     return wide_df
 
 
-def read_and_process_csv(filepath: Path, storage_interval: int, quality_class: str) -> pd.DataFrame:
-    """Read a CSV file and add metadata columns"""
+def read_and_process_csv(filepath: Path, storage_interval: int, quality_class: str, category_map: Dict[str, str]) -> pd.DataFrame:
+    """Read a CSV file and add metadata columns with true category from Excel"""
     try:
         df = pd.read_csv(filepath)
         
+        # Get station names
+        station_id = extract_station_id(filepath.name)
+        full_station_name = get_full_station_name(filepath.name)
+        
+        # Use true category from Excel mapping, fall back to directory-based class if not found
+        true_category = category_map.get(full_station_name, quality_class)
+        
         # Add metadata columns
         df['storage_interval'] = storage_interval
-        df['class'] = quality_class
-        df['station'] = extract_station_id(filepath.name)
+        df['class'] = true_category  # Use true category from Excel
+        df['directory_class'] = quality_class  # Keep original directory class for reference
+        df['station'] = station_id
+        df['full_station_name'] = full_station_name
         df['source_file'] = filepath.name
         
         return df
@@ -181,15 +219,18 @@ def read_and_process_csv(filepath: Path, storage_interval: int, quality_class: s
         return pd.DataFrame()
 
 
-def process_csv_file(args: Tuple[Path, int, str]) -> pd.DataFrame:
+def process_csv_file(args: Tuple[Path, int, str, Dict[str, str]]) -> pd.DataFrame:
     """Wrapper function for multiprocessing - processes a single CSV file"""
-    filepath, storage_interval, quality_class = args
-    return read_and_process_csv(filepath, storage_interval, quality_class)
+    filepath, storage_interval, quality_class, category_map = args
+    return read_and_process_csv(filepath, storage_interval, quality_class, category_map)
 
 
 def merge_all_data() -> pd.DataFrame:
     """Merge all CSV files from specified directories using multiprocessing"""
-    file_args: List[Tuple[Path, int, str]] = []
+    # Load category mapping from Excel
+    category_map = load_category_mapping()
+    
+    file_args: List[Tuple[Path, int, str, Dict[str, str]]] = []
     
     # Collect all files to process
     for interval in STORAGE_INTERVALS:
@@ -210,9 +251,9 @@ def merge_all_data() -> pd.DataFrame:
             csv_files = list(class_dir.glob("*.csv"))
             print(f"Found {len(csv_files)} files in {interval}min/{quality_class}")
             
-            # Add to processing queue
+            # Add to processing queue with category_map
             for csv_file in csv_files:
-                file_args.append((csv_file, interval, quality_class))
+                file_args.append((csv_file, interval, quality_class, category_map))
     
     print(f"\nTotal files to process: {len(file_args)}")
     print(f"Using {NUM_WORKERS} CPU cores for parallel processing...")
@@ -239,7 +280,9 @@ def merge_all_data() -> pd.DataFrame:
             'wind speed',
             'storage_interval',
             'class',
+            'directory_class',
             'station',
+            'full_station_name',
             'source_file'
         ]
         
@@ -279,8 +322,22 @@ def main():
     print("\nRows by storage interval:")
     print(merged_df['storage_interval'].value_counts().sort_index())
     
-    print("\nRows by quality class:")
+    print("\nRows by quality class (from Excel):")
     print(merged_df['class'].value_counts())
+    
+    print("\nRows by directory class (original):")
+    print(merged_df['directory_class'].value_counts())
+    
+    print("\n--- Category Mapping Comparison ---")
+    comparison = merged_df.groupby(['directory_class', 'class']).size().reset_index(name='count')
+    print(comparison.to_string())
+    
+    # Show stations where directory class != Excel class
+    mismatches = merged_df[merged_df['directory_class'] != merged_df['class']]
+    if len(mismatches) > 0:
+        print(f"\n--- Stations with category corrections: {mismatches['full_station_name'].nunique()} ---")
+        mismatch_summary = mismatches.groupby(['full_station_name', 'directory_class', 'class']).size().reset_index(name='records')
+        print(mismatch_summary.to_string())
     
     # Timestamp alignment
     if ALIGN_TIMESTAMPS:

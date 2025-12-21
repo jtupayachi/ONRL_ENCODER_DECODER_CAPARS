@@ -1,0 +1,7 @@
+Model,Mean Accuracy,Std Accuracy,Mean F1-Score,Std F1-Score,Best Fold Acc,Worst Fold Acc,Fusion Method,Model ID
+ViT-Huge-Dual-concat,0.7339,0.0874,0.7233,0.0962,0.8261,0.6522,concat,google/vit-huge-patch14-224-in21k
+ViT-Huge-Dual-add,0.7344,0.0657,0.7295,0.0699,0.7826,0.6596,add,google/vit-huge-patch14-224-in21k
+ViT-Huge-Dual-attention,0.7268,0.0305,0.7267,0.0294,0.7609,0.7021,attention,google/vit-huge-patch14-224-in21k
+Swin-V2-Large-Dual-concat,0.8131,0.0312,0.8112,0.0354,0.8478,0.7872,concat,microsoft/swinv2-large-patch4-window12-192-22k
+Swin-V2-Large-Dual-add,0.7843,0.0363,0.7816,0.0418,0.8261,0.7609,add,microsoft/swinv2-large-patch4-window12-192-22k
+Swin-V2-Large-Dual-attention,0.7769,0.0551,0.7725,0.0634,0.8261,0.7174,attention,microsoft/swinv2-large-patch4-window12-192-22k

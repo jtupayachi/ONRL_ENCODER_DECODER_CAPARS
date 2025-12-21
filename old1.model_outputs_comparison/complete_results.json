@@ -1,0 +1,142 @@
+[
+  {
+    "model_name": "ViT-Large",
+    "model_id": "google/vit-large-patch16-384",
+    "mean_accuracy": 0.6558688075678368,
+    "std_accuracy": 0.02200966587766522,
+    "mean_f1": 0.6454320340981273,
+    "std_f1": 0.03209549910738078,
+    "best_fold_accuracy": 0.6730769230769231,
+    "worst_fold_accuracy": 0.6310679611650486,
+    "parameters": "303,693,827",
+    "color": "purple",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 3,
+        "val_accuracy": 0.6730769230769231,
+        "val_f1_score": 0.674934282508716,
+        "val_loss": 0.8112264481874613
+      },
+      {
+        "fold": 2,
+        "best_epoch": 4,
+        "val_accuracy": 0.6634615384615384,
+        "val_f1_score": 0.6501059984895889,
+        "val_loss": 0.8445139022973868
+      },
+      {
+        "fold": 3,
+        "best_epoch": 3,
+        "val_accuracy": 0.6310679611650486,
+        "val_f1_score": 0.611255821296077,
+        "val_loss": 0.9234212728647085
+      }
+    ]
+  },
+  {
+    "model_name": "ConvNeXt-Large",
+    "model_id": "facebook/convnext-large-384",
+    "mean_accuracy": 0.6045245207866567,
+    "std_accuracy": 0.053243469773541344,
+    "mean_f1": 0.5706870288801492,
+    "std_f1": 0.04257442360653416,
+    "best_fold_accuracy": 0.6538461538461539,
+    "worst_fold_accuracy": 0.5480769230769231,
+    "parameters": "196,234,947",
+    "color": "blue",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 15,
+        "val_accuracy": 0.6538461538461539,
+        "val_f1_score": 0.6147219534316308,
+        "val_loss": 0.8572732852055476
+      },
+      {
+        "fold": 2,
+        "best_epoch": 15,
+        "val_accuracy": 0.5480769230769231,
+        "val_f1_score": 0.5297413968503724,
+        "val_loss": 0.9397009794528668
+      },
+      {
+        "fold": 3,
+        "best_epoch": 15,
+        "val_accuracy": 0.6116504854368932,
+        "val_f1_score": 0.5675977363584445,
+        "val_loss": 0.9069301577714773
+      }
+    ]
+  },
+  {
+    "model_name": "Swin-V2-Large",
+    "model_id": "microsoft/swinv2-large-patch4-window12-192-22k",
+    "mean_accuracy": 0.6235997012696042,
+    "std_accuracy": 0.07792910911373434,
+    "mean_f1": 0.6209646327547241,
+    "std_f1": 0.06886278665546748,
+    "best_fold_accuracy": 0.7115384615384616,
+    "worst_fold_accuracy": 0.5631067961165048,
+    "parameters": "195,207,543",
+    "color": "green",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 4,
+        "val_accuracy": 0.7115384615384616,
+        "val_f1_score": 0.7001536593855323,
+        "val_loss": 0.7504408703400538
+      },
+      {
+        "fold": 2,
+        "best_epoch": 1,
+        "val_accuracy": 0.5961538461538461,
+        "val_f1_score": 0.5876076615758742,
+        "val_loss": 0.9172787666320801
+      },
+      {
+        "fold": 3,
+        "best_epoch": 3,
+        "val_accuracy": 0.5631067961165048,
+        "val_f1_score": 0.5751325773027658,
+        "val_loss": 0.8819183890636151
+      }
+    ]
+  },
+  {
+    "model_name": "DINOv2-Large",
+    "model_id": "facebook/dinov2-large",
+    "mean_accuracy": 0.578790141896938,
+    "std_accuracy": 0.038597250364219744,
+    "mean_f1": 0.5830315728722248,
+    "std_f1": 0.03817214149734385,
+    "best_fold_accuracy": 0.6153846153846154,
+    "worst_fold_accuracy": 0.5384615384615384,
+    "parameters": "304,374,787",
+    "color": "red",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 2,
+        "val_accuracy": 0.5384615384615384,
+        "val_f1_score": 0.5553218839983546,
+        "val_loss": 0.9907237749833328
+      },
+      {
+        "fold": 2,
+        "best_epoch": 6,
+        "val_accuracy": 0.6153846153846154,
+        "val_f1_score": 0.6265721418813887,
+        "val_loss": 1.1410721173653235
+      },
+      {
+        "fold": 3,
+        "best_epoch": 4,
+        "val_accuracy": 0.5825242718446602,
+        "val_f1_score": 0.5672006927369312,
+        "val_loss": 0.976281266946059
+      }
+    ]
+  }
+]

@@ -1,0 +1,84 @@
+[
+  {
+    "model_name": "ViT-Huge",
+    "model_id": "google/vit-huge-patch14-224-in21k",
+    "mean_accuracy": 0.7011762509335324,
+    "std_accuracy": 0.05719903699894537,
+    "mean_f1": 0.6919678696039573,
+    "std_f1": 0.05761563005638918,
+    "best_fold_accuracy": 0.7669902912621359,
+    "worst_fold_accuracy": 0.6634615384615384,
+    "parameters": "630,768,643",
+    "color": "purple",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 15,
+        "val_accuracy": 0.7669902912621359,
+        "val_f1_score": 0.7584956481537317,
+        "val_loss": 0.8331480989089379
+      },
+      {
+        "fold": 2,
+        "best_epoch": 15,
+        "val_accuracy": 0.6730769230769231,
+        "val_f1_score": 0.6583848601027816,
+        "val_loss": 0.8446324330109817
+      },
+      {
+        "fold": 3,
+        "best_epoch": 15,
+        "val_accuracy": 0.6634615384615384,
+        "val_f1_score": 0.6590231005553585,
+        "val_loss": 0.8436147754008954
+      }
+    ]
+  },
+  {
+    "model_name": "Swin-V2-Large",
+    "model_id": "microsoft/swinv2-large-patch4-window12-192-22k",
+    "mean_accuracy": 0.6847771969131192,
+    "std_accuracy": 0.03538030651583869,
+    "mean_f1": 0.6766399840185117,
+    "std_f1": 0.04850305274319978,
+    "best_fold_accuracy": 0.7211538461538461,
+    "worst_fold_accuracy": 0.6504854368932039,
+    "parameters": "195,207,543",
+    "color": "green",
+    "fold_results": [
+      {
+        "fold": 1,
+        "best_epoch": 7,
+        "val_accuracy": 0.6504854368932039,
+        "val_f1_score": 0.621750627678972,
+        "val_loss": 0.7794682440849451
+      },
+      {
+        "fold": 2,
+        "best_epoch": 6,
+        "val_accuracy": 0.7211538461538461,
+        "val_f1_score": 0.7137239072771305,
+        "val_loss": 0.7741350348179157
+      },
+      {
+        "fold": 3,
+        "best_epoch": 8,
+        "val_accuracy": 0.6826923076923077,
+        "val_f1_score": 0.6944454170994324,
+        "val_loss": 0.6386249753145071
+      }
+    ]
+  },
+  {
+    "model_name": "Ensemble (ViT+Swin)",
+    "model_id": "ensemble",
+    "mean_accuracy": 0.7010206621857108,
+    "std_accuracy": 0.017894221234452872,
+    "mean_f1": 0.6959052388524274,
+    "std_f1": 0.0061506582676532934,
+    "best_fold_accuracy": 0.7184466019417476,
+    "worst_fold_accuracy": 0.6826923076923077,
+    "parameters": "N/A",
+    "color": "orange"
+  }
+]

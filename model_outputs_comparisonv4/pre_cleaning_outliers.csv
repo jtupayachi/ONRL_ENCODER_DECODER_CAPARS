@@ -1,0 +1,17 @@
+station,category,reason
+MesoWest_APRSWXNET-CWOP_D6371,bad,outlier_detected
+MesoWest_NMCC_ERAN5,good,outlier_detected
+MesoWest_NMCC_CLEN5,good,outlier_detected
+MesoWest_CDOT_CO054,bad,outlier_detected
+MesoWest_CoAgMet_CSU91,good,outlier_detected
+MesoWest_NMCC_ASCN5,good,outlier_detected
+MesoWest_DRI_VSNT,good,outlier_detected
+MesoWest_NMCC_TSWN5,good,outlier_detected
+MesoWest_NMCC_VLSN5,good,outlier_detected
+MesoWest_NMCC_LSLN5,bad,outlier_detected
+MesoWest_NMDOT_NM010,suspect,outlier_detected
+MesoWest_CoAgMet_CSU42,good,outlier_detected
+MesoWest_RAWS_TT075,bad,outlier_detected
+MesoWest_NMCC_SVAN5,suspect,outlier_detected
+MesoWest_CDOT_CO057,bad,outlier_detected
+MesoWest_DRI_VRDD,bad,outlier_detected

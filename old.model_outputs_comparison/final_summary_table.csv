@@ -1,0 +1,5 @@
+Model,Mean Accuracy,Std Accuracy,Mean F1-Score,Std F1-Score,Best Fold Acc,Worst Fold Acc,Parameters,Model ID
+ViT-Large,0.6329,0.0816,0.6161,0.1012,0.7105,0.5478,"303,693,827",google/vit-large-patch16-384
+ConvNeXt-Large,0.6443,0.0570,0.6072,0.0867,0.7018,0.5877,"196,234,947",facebook/convnext-large-384
+Swin-V2-Large,0.5976,0.1240,0.5865,0.1416,0.7105,0.4649,"195,207,543",microsoft/swinv2-large-patch4-window12-192-22k
+DINOv2-Large,0.5861,0.0510,0.5538,0.0861,0.6404,0.5391,"304,374,787",facebook/dinov2-large
