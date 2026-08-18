@@ -55,3 +55,21 @@ merged_*.csv
 
 # Logs
 *.log
+
+# Backup files
+*.bak*
+
+# Folders starting with 6 (large generated content)
+6*/
+
+# Large archive files
+*.7z
+*.tar
+
+# Model output directories (all versions)
+model_outputs_*/
+predictions_v8_*/
+old.ablation_runs/
+old.model_outputs_comparison/
+old1.model_outputs_comparison/
+old1.model_outputs_comparisonv2/
